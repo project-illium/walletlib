@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha512"
 	"encoding/binary"
 	"errors"
@@ -21,7 +22,7 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/pbkdf2"
-	"math/rand"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,27 +68,24 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, 0)
-	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), b); err != nil {
+	salt := make([]byte, 32)
+	rand.Read(salt)
+	if err := ds.Put(context.Background(), datastore.NewKey(KeyDatastoreSaltKey), salt); err != nil {
 		return nil, err
 	}
 
-	viewMaster, err := seedToViewMaster(bip39.NewSeed(mnemonic, ""))
+	if err := ds.Put(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey), []byte{0x00}); err != nil {
+		return nil, err
+	}
+
+	seed := bip39.NewSeed(string(mnemonic), "")
+
+	addr, viewKey, err := newAddress(0, seed, params)
 	if err != nil {
 		return nil, err
 	}
-	viewChild0, err := viewMaster.Child(0)
-	if err != nil {
-		return nil, err
-	}
 
-	curveChild0, ok := viewChild0.PrivKey.(*icrypto.Curve25519PrivateKey)
-	if !ok {
-		return nil, errors.New("error converting hdkey to curve25519")
-	}
-
-	ser, err := crypto.MarshalPrivateKey(viewChild0)
+	ser, err := crypto.MarshalPrivateKey(viewKey)
 	if err != nil {
 		return nil, err
 	}
@@ -95,17 +93,17 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	salt := make([]byte, 32)
-	rand.Read(salt)
-	if err := ds.Put(context.Background(), datastore.NewKey(KeyDatastoreSaltKey), salt); err != nil {
+	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), append(make([]byte, 32), []byte(addr.String())...)); err != nil {
 		return nil, err
 	}
 
 	return &Keychain{
-		ds:       ds,
-		params:   params,
-		viewKeys: []*indexedViewKey{{curveChild0, 0}},
-		mtx:      sync.RWMutex{},
+		ds:              ds,
+		params:          params,
+		viewKeys:        []*indexedViewKey{{viewKey, 0}},
+		isEncrypted:     false,
+		unencryptedSeed: seed,
+		mtx:             sync.RWMutex{},
 	}, nil
 }
 
@@ -142,11 +140,17 @@ func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, e
 		return nil, ErrUninitializedKeychain
 	}
 
+	encrypted, err := ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	if err != nil {
+		return nil, err
+	}
+
 	return &Keychain{
-		ds:       ds,
-		params:   params,
-		viewKeys: viewKeys,
-		mtx:      sync.RWMutex{},
+		ds:          ds,
+		params:      params,
+		viewKeys:    viewKeys,
+		isEncrypted: encrypted[0] == 0x01,
+		mtx:         sync.RWMutex{},
 	}, nil
 }
 
@@ -154,116 +158,191 @@ func (kc *Keychain) Address() (Address, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
-	indexBytes, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressIndexDatastoreKey))
-	if err != nil {
-		return nil, err
-	}
-	index := binary.BigEndian.Uint32(indexBytes)
-
-	mnemonic, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	value, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressIndexDatastoreKey))
 	if err != nil {
 		return nil, err
 	}
 
-	seed := bip39.NewSeed(string(mnemonic), "")
-	spendMaster, err := seedToSpendMaster(seed)
-	if err != nil {
-		return nil, err
-	}
-	childSpendKey, err := spendMaster.Child(index)
-	if err != nil {
-		return nil, err
-	}
-	rawPublic, err := childSpendKey.GetPublic().Raw()
-	if err != nil {
-		return nil, err
-	}
-
-	viewMaster, err := seedToViewMaster(seed)
-	if err != nil {
-		return nil, err
-	}
-	childViewKey, err := viewMaster.Child(index)
-	if err != nil {
-		return nil, err
-	}
-
-	script := types.UnlockingScript{
-		SnarkVerificationKey: mockBasicUnlockScriptCommitment,
-		PublicParams:         [][]byte{rawPublic},
-	}
-
-	return NewBasicAddress(script, childViewKey.PrivateKey().GetPublic(), kc.params)
+	return DecodeAddress(string(value[4:]), kc.params)
 }
 
 func (kc *Keychain) NewAddress() (Address, error) {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
 
-	if kc.isPruned {
-		return nil, ErrPublicOnlyKeychain
-	}
 	if kc.isEncrypted {
 		return nil, ErrEncryptedKeychain
 	}
+	if kc.isPruned {
+		return nil, ErrPublicOnlyKeychain
+	}
 
-	indexBytes, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressIndexDatastoreKey))
+	value, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressIndexDatastoreKey))
 	if err != nil {
 		return nil, err
 	}
-	nextIndex := binary.BigEndian.Uint32(indexBytes) + 1
-
-	spendMaster, err := seedToSpendMaster(kc.unencryptedSeed)
+	index := binary.BigEndian.Uint32(value[:8]) + 1
+	addr, viewKey, err := newAddress(index, kc.unencryptedSeed, kc.params)
 	if err != nil {
 		return nil, err
 	}
-	childSpendKey, err := spendMaster.Child(nextIndex)
+
+	ser, err := crypto.MarshalPrivateKey(viewKey)
 	if err != nil {
 		return nil, err
+	}
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyDatastoreKeyPrefix+strconv.Itoa(int(index))), ser); err != nil {
+		return nil, err
+	}
+	kc.viewKeys = append(kc.viewKeys, &indexedViewKey{
+		key:   viewKey,
+		index: index,
+	})
+	return addr, nil
+}
+
+func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Address, *icrypto.Curve25519PrivateKey, error) {
+	spendMaster, err := seedToSpendMaster(seed)
+	if err != nil {
+		return nil, nil, err
+	}
+	childSpendKey, err := spendMaster.Child(index)
+	if err != nil {
+		return nil, nil, err
 	}
 	rawPublic, err := childSpendKey.GetPublic().Raw()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	viewMaster, err := seedToViewMaster(kc.unencryptedSeed)
+	viewMaster, err := seedToViewMaster(seed)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	childViewKey, err := viewMaster.Child(nextIndex)
+	childViewKey, err := viewMaster.Child(index)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	curveViewKey, ok := childViewKey.PrivKey.(*icrypto.Curve25519PrivateKey)
-	if !ok {
-		return nil, errors.New("error converting hdkey to curve25519")
-	}
-
-	ser, err := crypto.MarshalPrivateKey(childViewKey)
-	if err != nil {
-		return nil, err
-	}
-
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, nextIndex)
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), b); err != nil {
-		return nil, err
-	}
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyDatastoreKeyPrefix+strconv.Itoa(int(nextIndex))), ser); err != nil {
-		return nil, err
-	}
-
-	kc.viewKeys = append(kc.viewKeys, &indexedViewKey{
-		key:   curveViewKey,
-		index: nextIndex,
-	})
 
 	script := types.UnlockingScript{
 		SnarkVerificationKey: mockBasicUnlockScriptCommitment,
 		PublicParams:         [][]byte{rawPublic},
 	}
 
-	return NewBasicAddress(script, childViewKey.PrivateKey().GetPublic(), kc.params)
+	addr, err := NewBasicAddress(script, childViewKey.PrivateKey().GetPublic(), params)
+	return addr, childViewKey.PrivateKey().(*icrypto.Curve25519PrivateKey), err
+}
+
+func (kc *Keychain) SetPassphrase(passphrase string) error {
+	kc.mtx.Lock()
+	defer kc.mtx.Unlock()
+
+	encrypted, err := kc.ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	if err != nil {
+		return err
+	}
+	if encrypted[0] == 0x01 {
+		return errors.New("wallet already encrypted")
+	}
+
+	salt, err := kc.ds.Get(context.Background(), datastore.NewKey(KeyDatastoreSaltKey))
+	if err != nil {
+		return err
+	}
+
+	mnemonic, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	if err != nil {
+		return err
+	}
+
+	dk := pbkdf2.Key([]byte(passphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
+
+	block, err := aes.NewCipher(dk)
+	if err != nil {
+		return err
+	}
+
+	// The IV needs to be unique, but not secure. Therefore it's common to
+	// include it at the beginning of the ciphertext.
+	ciphertext := make([]byte, aes.BlockSize+len(mnemonic))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return err
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], mnemonic)
+
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey), mnemonic); err != nil {
+		return err
+	}
+
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey), []byte{0x01}); err != nil {
+		return err
+	}
+
+	kc.isEncrypted = true
+	return nil
+}
+
+func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) error {
+	encrypted, err := kc.ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	if err != nil {
+		return err
+	}
+	if encrypted[0] == 0x00 {
+		return errors.New("wallet not encrypted")
+	}
+
+	ciphertext, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	if err != nil {
+		return err
+	}
+
+	salt, err := kc.ds.Get(context.Background(), datastore.NewKey(KeyDatastoreSaltKey))
+	if err != nil {
+		return err
+	}
+
+	dk := pbkdf2.Key([]byte(currentPassphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
+
+	block, err := aes.NewCipher(dk)
+	if err != nil {
+		return err
+	}
+
+	// The IV needs to be unique, but not secure. Therefore it's common to
+	// include it at the beginning of the ciphertext.
+	if len(ciphertext) < aes.BlockSize {
+		return errors.New("ciphertext too short")
+	}
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+
+	// XORKeyStream can work in-place if the two arguments are the same.
+	stream.XORKeyStream(ciphertext, ciphertext)
+
+	dk = pbkdf2.Key([]byte(newPassphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
+
+	block, err = aes.NewCipher(dk)
+	if err != nil {
+		return err
+	}
+
+	// The IV needs to be unique, but not secure. Therefore it's common to
+	// include it at the beginning of the ciphertext.
+	ciphertext = make([]byte, aes.BlockSize+len(ciphertext))
+	iv = ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return err
+	}
+
+	stream = cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], ciphertext)
+
+	return kc.ds.Put(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey), []byte(ciphertext))
 }
 
 func (kc *Keychain) Unlock(passphrase string, duration time.Duration) error {
