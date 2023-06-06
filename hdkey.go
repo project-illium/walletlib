@@ -1,0 +1,104 @@
+// Copyright (c) 2022 The illium developers
+// Use of this source code is governed by an MIT
+// license that can be found in the LICENSE file.
+
+package walletlib
+
+import (
+	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/sha512"
+	"encoding/binary"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	icrypto "github.com/project-illium/ilxd/crypto"
+)
+
+const (
+	NetworkKeyMacCode     = "/illium/network"
+	SpendMasterKeyMacCode = "/illium/spend"
+	ViewMasterKeyMacCode  = "/illium/view"
+)
+
+type HDPrivateKey struct {
+	crypto.PrivKey
+	chaincode []byte
+}
+
+func (k *HDPrivateKey) Child(n uint32) (*HDPrivateKey, error) {
+	mac := hmac.New(sha512.New, k.chaincode)
+	nBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(nBytes, n)
+
+	rawKey, err := k.Raw()
+	if err != nil {
+		return nil, err
+	}
+	res := mac.Sum(append(rawKey, nBytes...))
+
+	// New from seed does not actually mutate the seed/private key. Instead,
+	// it just appends the public key which it computes as point(sha512(seed))
+	priv := ed25519.NewKeyFromSeed(res[:ed25519.PrivateKeySize/2])
+	privKey, err := crypto.UnmarshalEd25519PrivateKey(priv)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := k.PrivKey.(*icrypto.Curve25519PrivateKey); ok {
+		// This function takes seed (which at this point is still the raw
+		// value from the hmac, and mutates it slightly for curve25519.
+		privKey, err = icrypto.Curve25519PrivateKeyFromEd25519(privKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &HDPrivateKey{
+		PrivKey:   privKey,
+		chaincode: res[ed25519.PrivateKeySize/2:],
+	}, nil
+}
+
+func (k *HDPrivateKey) PrivateKey() crypto.PrivKey {
+	return k.PrivKey
+}
+
+func seedToNetworkKey(seed []byte) (*HDPrivateKey, error) {
+	mac := hmac.New(sha512.New, []byte(NetworkKeyMacCode))
+	res := mac.Sum(seed)
+	privKey, err := crypto.UnmarshalEd25519PrivateKey(res[:ed25519.PrivateKeySize])
+	if err != nil {
+		return nil, err
+	}
+	return &HDPrivateKey{
+		PrivKey:   privKey,
+		chaincode: res[ed25519.PrivateKeySize:],
+	}, nil
+}
+
+func seedToSpendMaster(seed []byte) (*HDPrivateKey, error) {
+	mac := hmac.New(sha512.New, []byte(SpendMasterKeyMacCode))
+	res := mac.Sum(seed)
+	privKey, err := crypto.UnmarshalEd25519PrivateKey(res[:ed25519.PrivateKeySize])
+	if err != nil {
+		return nil, err
+	}
+	return &HDPrivateKey{
+		PrivKey:   privKey,
+		chaincode: res[ed25519.PrivateKeySize:],
+	}, nil
+}
+
+func seedToViewMaster(seed []byte) (*HDPrivateKey, error) {
+	mac := hmac.New(sha512.New, []byte(ViewMasterKeyMacCode))
+	res := mac.Sum(seed)
+	privKey, err := crypto.UnmarshalEd25519PrivateKey(res[:ed25519.PrivateKeySize])
+	if err != nil {
+		return nil, err
+	}
+	privKey, err = icrypto.Curve25519PrivateKeyFromEd25519(privKey)
+	if err != nil {
+		return nil, err
+	}
+	return &HDPrivateKey{
+		PrivKey:   privKey,
+		chaincode: res[ed25519.PrivateKeySize:],
+	}, nil
+}

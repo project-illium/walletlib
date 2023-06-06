@@ -1,0 +1,12 @@
+syntax = "proto3";
+option go_package = "../pb";
+
+message Utxo {
+    bytes commitment = 1;
+    uint32 index     = 2;
+    bytes scriptHash = 3;
+    uint64 amount    = 4;
+    bytes asset_ID   = 5;
+    bytes state      = 6;
+    bytes salt       = 7;
+}
