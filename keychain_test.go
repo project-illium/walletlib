@@ -85,4 +85,7 @@ func TestKeychain(t *testing.T) {
 	_, err = kc.NewAddress()
 	assert.NoError(t, err)
 	assert.Len(t, kc.viewKeys, 4)
+
+	assert.NoError(t, kc.Lock())
+	assert.Error(t, kc.Unlock("letmein", time.Second*10))
 }

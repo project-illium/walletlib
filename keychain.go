@@ -10,8 +10,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/sha512"
-	"encoding/binary"
 	"errors"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
@@ -78,7 +78,7 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	seed := bip39.NewSeed(string(mnemonic), "")
+	seed := bip39.NewSeed(mnemonic, "")
 
 	addr, viewKey, err := newAddress(0, seed, params)
 	if err != nil {
@@ -93,7 +93,7 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), append(make([]byte, 4), []byte(addr.String())...)); err != nil {
+	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+"0"), []byte(addr.String())); err != nil {
 		return nil, err
 	}
 
@@ -145,25 +145,61 @@ func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, e
 		return nil, err
 	}
 
+	pruned := false
+	_, err = ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	if errors.Is(err, datastore.ErrNotFound) {
+		pruned = true
+	} else if err != nil {
+		return nil, err
+	}
+
 	return &Keychain{
 		ds:          ds,
 		params:      params,
 		viewKeys:    viewKeys,
 		isEncrypted: encrypted[0] == 0x01,
+		isPruned:    pruned,
 		mtx:         sync.RWMutex{},
 	}, nil
+}
+
+func (kc *Keychain) Addresses() ([]Address, error) {
+	kc.mtx.RLock()
+	defer kc.mtx.RUnlock()
+
+	results, err := kc.ds.Query(context.Background(), query.Query{
+		Prefix: AddressIndexDatastoreKeyPrefix,
+		Orders: []query.Order{query.OrderByKeyDescending{}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]Address, 0, 5)
+	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
+		addr, err := DecodeAddress(string(result.Value), kc.params)
+		if err != nil {
+			return nil, err
+		}
+		addrs = append(addrs, addr)
+	}
+	return addrs, nil
 }
 
 func (kc *Keychain) Address() (Address, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
-	value, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressIndexDatastoreKey))
+	results, err := kc.ds.Query(context.Background(), query.Query{
+		Prefix: AddressIndexDatastoreKeyPrefix,
+		Orders: []query.Order{query.OrderByKeyDescending{}},
+		Limit:  1,
+	})
 	if err != nil {
 		return nil, err
 	}
+	result, _ := results.NextSync()
 
-	return DecodeAddress(string(value[4:]), kc.params)
+	return DecodeAddress(string(result.Value), kc.params)
 }
 
 func (kc *Keychain) NewAddress() (Address, error) {
@@ -177,12 +213,23 @@ func (kc *Keychain) NewAddress() (Address, error) {
 		return nil, ErrPublicOnlyKeychain
 	}
 
-	value, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressIndexDatastoreKey))
+	results, err := kc.ds.Query(context.Background(), query.Query{
+		Prefix: AddressIndexDatastoreKeyPrefix,
+		Orders: []query.Order{query.OrderByKeyDescending{}},
+		Limit:  1,
+	})
 	if err != nil {
 		return nil, err
 	}
-	index := binary.BigEndian.Uint32(value[:4]) + 1
-	addr, viewKey, err := newAddress(index, kc.unencryptedSeed, kc.params)
+	result, _ := results.NextSync()
+	split := strings.Split(result.Key, "/")
+
+	index, err := strconv.Atoi(split[len(split)-1])
+	if err != nil {
+		return nil, err
+	}
+	newIndex := uint32(index + 1)
+	addr, viewKey, err := newAddress(newIndex, kc.unencryptedSeed, kc.params)
 	if err != nil {
 		return nil, err
 	}
@@ -191,19 +238,78 @@ func (kc *Keychain) NewAddress() (Address, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyDatastoreKeyPrefix+strconv.Itoa(int(index))), ser); err != nil {
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyDatastoreKeyPrefix+strconv.Itoa(int(newIndex))), ser); err != nil {
 		return nil, err
 	}
-	indexBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(indexBytes, index)
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), append(indexBytes, []byte(addr.String())...)); err != nil {
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+strconv.Itoa(int(newIndex))), []byte(addr.String())); err != nil {
 		return nil, err
 	}
 	kc.viewKeys = append(kc.viewKeys, &indexedViewKey{
 		key:   viewKey,
-		index: index,
+		index: newIndex,
 	})
 	return addr, nil
+}
+
+func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
+	kc.mtx.Lock()
+	defer kc.mtx.Unlock()
+
+	if kc.isEncrypted {
+		return nil, ErrEncryptedKeychain
+	}
+	if kc.isPruned {
+		return nil, ErrPublicOnlyKeychain
+	}
+
+	results, err := kc.ds.Query(context.Background(), query.Query{
+		Prefix: AddressIndexDatastoreKeyPrefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+	keys := make(map[WalletPrivateKey]Address)
+	spendMaster, err := seedToSpendMaster(kc.unencryptedSeed)
+	if err != nil {
+		return nil, err
+	}
+	viewMaster, err := seedToViewMaster(kc.unencryptedSeed)
+	if err != nil {
+		return nil, err
+	}
+	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
+		addr, err := DecodeAddress(string(result.Value), kc.params)
+		if err != nil {
+			return nil, err
+		}
+		split := strings.Split(result.Key, "/")
+
+		index, err := strconv.Atoi(split[len(split)-1])
+		if err != nil {
+			return nil, err
+		}
+		childSpendKey, err := spendMaster.Child(uint32(index))
+		if err != nil {
+			return nil, err
+		}
+		rawSpend, err := childSpendKey.Raw()
+		if err != nil {
+			return nil, err
+		}
+		childViewKey, err := viewMaster.Child(uint32(index))
+		if err != nil {
+			return nil, err
+		}
+		rawView, err := childViewKey.Raw()
+		if err != nil {
+			return nil, err
+		}
+		k := WalletPrivateKey{}
+		copy(k.spendKey[:], rawSpend[:32])
+		copy(k.viewKey[:], rawView[:32])
+		keys[k] = addr
+	}
+	return keys, nil
 }
 
 func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Address, *icrypto.Curve25519PrivateKey, error) {
@@ -286,6 +392,11 @@ func (kc *Keychain) SetPassphrase(passphrase string) error {
 		return err
 	}
 
+	h := sha256.Sum256(dk)
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey), h[:]); err != nil {
+		return err
+	}
+
 	kc.isEncrypted = true
 	return nil
 }
@@ -310,6 +421,15 @@ func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) er
 	}
 
 	dk := pbkdf2.Key([]byte(currentPassphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
+
+	h, err := kc.ds.Get(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey))
+	if err != nil {
+		return err
+	}
+	pkh := sha256.Sum256(dk)
+	if !bytes.Equal(pkh[:], h) {
+		return errors.New("invalid passphrase")
+	}
 
 	block, err := aes.NewCipher(dk)
 	if err != nil {
@@ -347,6 +467,11 @@ func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) er
 	stream = cipher.NewCFBEncrypter(block2, iv)
 	stream.XORKeyStream(ciphertext2[aes.BlockSize:], ciphertext)
 
+	pkh2 := sha256.Sum256(dk2)
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey), pkh2[:]); err != nil {
+		return err
+	}
+
 	return kc.ds.Put(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey), []byte(ciphertext))
 }
 
@@ -369,6 +494,14 @@ func (kc *Keychain) Unlock(passphrase string, duration time.Duration) error {
 	}
 
 	dk := pbkdf2.Key([]byte(passphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
+	h, err := kc.ds.Get(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey))
+	if err != nil {
+		return err
+	}
+	pkh := sha256.Sum256(dk)
+	if !bytes.Equal(pkh[:], h) {
+		return errors.New("invalid passphrase")
+	}
 
 	block, err := aes.NewCipher(dk)
 	if err != nil {
@@ -411,6 +544,36 @@ func (kc *Keychain) Lock() error {
 
 	kc.isEncrypted = true
 	kc.unencryptedSeed = nil
+	return nil
+}
+
+func (kc *Keychain) Prune(passphrase string) error {
+	kc.mtx.Lock()
+	defer kc.mtx.Unlock()
+
+	if kc.isEncrypted {
+		salt, err := kc.ds.Get(context.Background(), datastore.NewKey(KeyDatastoreSaltKey))
+		if err != nil {
+			return err
+		}
+
+		dk := pbkdf2.Key([]byte(passphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
+
+		h, err := kc.ds.Get(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey))
+		if err != nil {
+			return err
+		}
+		pkh := sha256.Sum256(dk)
+		if !bytes.Equal(pkh[:], h) {
+			return errors.New("invalid passphrase")
+		}
+	}
+
+	if err := kc.ds.Delete(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey)); err != nil {
+		return err
+	}
+
+	kc.isPruned = true
 	return nil
 }
 

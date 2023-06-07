@@ -1,7 +1,7 @@
 syntax = "proto3";
 option go_package = "../pb";
 
-message Utxo {
+message SpendNote {
     bytes commitment = 1;
     uint32 key_index = 2;
     bytes scriptHash = 3;
@@ -9,9 +9,4 @@ message Utxo {
     bytes asset_ID   = 5;
     bytes state      = 6;
     bytes salt       = 7;
-
-    uint64 tree_index          = 8;
-    repeated bytes accumulator = 9;
-    repeated bytes hashes      = 10;
-    uint64 flags               = 11;
 }
