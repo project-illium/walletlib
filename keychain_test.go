@@ -1,0 +1,88 @@
+// Copyright (c) 2022 The illium developers
+// Use of this source code is governed by an MIT
+// license that can be found in the LICENSE file.
+
+package walletlib
+
+import (
+	"github.com/project-illium/ilxd/params"
+	"github.com/project-illium/ilxd/repo/mock"
+	"github.com/stretchr/testify/assert"
+	"github.com/tyler-smith/go-bip39"
+	"testing"
+	"time"
+)
+
+func TestKeychain(t *testing.T) {
+	ds := mock.NewMapDatastore()
+
+	_, err := LoadKeychain(ds, &params.RegestParams)
+	assert.Error(t, err)
+
+	ent, err := bip39.NewEntropy(256)
+	assert.NoError(t, err)
+	mnemonic, err := bip39.NewMnemonic(ent)
+	assert.NoError(t, err)
+
+	kc, err := NewKeychain(ds, &params.RegestParams, mnemonic)
+	assert.NoError(t, err)
+
+	assert.False(t, kc.isEncrypted)
+	assert.False(t, kc.isPruned)
+	assert.Len(t, kc.viewKeys, 1)
+
+	kc, err = LoadKeychain(ds, &params.RegestParams)
+	assert.NoError(t, err)
+
+	assert.False(t, kc.isEncrypted)
+	assert.False(t, kc.isPruned)
+	assert.Len(t, kc.viewKeys, 1)
+
+	addr, err := kc.Address()
+	assert.NoError(t, err)
+
+	addr2, err := kc.NewAddress()
+	assert.NoError(t, err)
+
+	assert.NotEqual(t, addr, addr2)
+	assert.Len(t, kc.viewKeys, 2)
+
+	addr, err = kc.Address()
+	assert.NoError(t, err)
+	assert.Equal(t, addr, addr2)
+
+	assert.NoError(t, kc.SetPassphrase("letmein"))
+	assert.True(t, kc.isEncrypted)
+
+	_, err = kc.Address()
+	assert.NoError(t, err)
+
+	_, err = kc.NewAddress()
+	assert.Error(t, err)
+
+	assert.NoError(t, kc.Unlock("letmein", time.Second*10))
+
+	_, err = kc.NewAddress()
+	assert.NoError(t, err)
+	assert.Len(t, kc.viewKeys, 3)
+
+	assert.NoError(t, kc.Lock())
+	_, err = kc.NewAddress()
+	assert.Error(t, err)
+
+	kc, err = LoadKeychain(ds, &params.RegestParams)
+	assert.NoError(t, err)
+
+	assert.True(t, kc.isEncrypted)
+	assert.Len(t, kc.viewKeys, 3)
+
+	_, err = kc.NewAddress()
+	assert.Error(t, err)
+
+	assert.NoError(t, kc.ChangePassphrase("letmein", "mooo"))
+
+	assert.NoError(t, kc.Unlock("mooo", time.Second*10))
+	_, err = kc.NewAddress()
+	assert.NoError(t, err)
+	assert.Len(t, kc.viewKeys, 4)
+}

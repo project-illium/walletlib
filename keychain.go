@@ -93,7 +93,7 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), append(make([]byte, 32), []byte(addr.String())...)); err != nil {
+	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), append(make([]byte, 4), []byte(addr.String())...)); err != nil {
 		return nil, err
 	}
 
@@ -117,7 +117,7 @@ func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, e
 	}
 
 	viewKeys := make([]*indexedViewKey, 0)
-	for result, ok := results.NextSync(); ok; {
+	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
 		indexStr := strings.Split(result.Key, "/")
 		index, err := strconv.Atoi(indexStr[len(indexStr)-1])
 		if err != nil {
@@ -181,7 +181,7 @@ func (kc *Keychain) NewAddress() (Address, error) {
 	if err != nil {
 		return nil, err
 	}
-	index := binary.BigEndian.Uint32(value[:8]) + 1
+	index := binary.BigEndian.Uint32(value[:4]) + 1
 	addr, viewKey, err := newAddress(index, kc.unencryptedSeed, kc.params)
 	if err != nil {
 		return nil, err
@@ -192,6 +192,11 @@ func (kc *Keychain) NewAddress() (Address, error) {
 		return nil, err
 	}
 	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyDatastoreKeyPrefix+strconv.Itoa(int(index))), ser); err != nil {
+		return nil, err
+	}
+	indexBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(indexBytes, index)
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKey), append(indexBytes, []byte(addr.String())...)); err != nil {
 		return nil, err
 	}
 	kc.viewKeys = append(kc.viewKeys, &indexedViewKey{
@@ -324,23 +329,23 @@ func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) er
 	// XORKeyStream can work in-place if the two arguments are the same.
 	stream.XORKeyStream(ciphertext, ciphertext)
 
-	dk = pbkdf2.Key([]byte(newPassphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
+	dk2 := pbkdf2.Key([]byte(newPassphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
 
-	block, err = aes.NewCipher(dk)
+	block2, err := aes.NewCipher(dk2)
 	if err != nil {
 		return err
 	}
 
-	// The IV needs to be unique, but not secure. Therefore it's common to
+	// The IV needs to be unique, but not secure. Therefor it's common to
 	// include it at the beginning of the ciphertext.
-	ciphertext = make([]byte, aes.BlockSize+len(ciphertext))
-	iv = ciphertext[:aes.BlockSize]
+	ciphertext2 := make([]byte, aes.BlockSize+len(ciphertext))
+	iv = ciphertext2[:aes.BlockSize]
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return err
 	}
 
-	stream = cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], ciphertext)
+	stream = cipher.NewCFBEncrypter(block2, iv)
+	stream.XORKeyStream(ciphertext2[aes.BlockSize:], ciphertext)
 
 	return kc.ds.Put(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey), []byte(ciphertext))
 }
