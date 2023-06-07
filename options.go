@@ -42,10 +42,20 @@ func Datastore(ds repo.Datastore) Option {
 	}
 }
 
+// MnemonicSeed is an optional option that allows the user to set
+// a custom seed. Also useful for restoring from seed.
+func MnemonicSeed(mnemonic string) Option {
+	return func(cfg *config) error {
+		cfg.mnemonic = mnemonic
+		return nil
+	}
+}
+
 type config struct {
 	datastore repo.Datastore
 	params    *params.NetworkParams
 	dataDir   string
+	mnemonic  string
 }
 
 func (c *config) validate() error {
