@@ -26,6 +26,8 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 		feePerKB = w.feePerKB
 	}
 
+	// Create the input source
+	var notes []*pb.SpendNote
 	inputSource := func(amount types.Amount) (types.Amount, []*pb.SpendNote, error) {
 		results, err := w.ds.Query(context.Background(), query.Query{
 			Prefix: NotesDatastoreKeyPrefix,
@@ -33,12 +35,16 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 		if err != nil {
 			return 0, nil, err
 		}
-		notes := make([]*pb.SpendNote, 0, 1)
+		notes = make([]*pb.SpendNote, 0, 1)
 		total := types.Amount(0)
 		for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
 			var note pb.SpendNote
 			if err := proto.Unmarshal(result.Value, &note); err != nil {
 				return 0, nil, err
+			}
+
+			if IsDustInput(types.Amount(note.Amount), feePerKB) {
+				continue
 			}
 
 			notes = append(notes, &note)
@@ -50,11 +56,36 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 		return total, notes, nil
 	}
 
-	rawTx, err := BuildTransaction(toAddr, amount, inputSource, w.keychain.Address, w.fetchProofsFunc, w.keychain.spendKey, feePerKB)
+	// Build tx
+	rawTx, err := BuildTransaction(toAddr, amount, inputSource, w.keychain.Address, w.fetchProofsFunc, feePerKB)
 	if err != nil {
 		return nil, err
 	}
 
+	// Sign the inputs
+	sigHash, err := rawTx.Tx.SigHash()
+	if err != nil {
+		return nil, err
+	}
+inputLoop:
+	for i, privIn := range rawTx.PrivateInputs {
+		for _, n := range notes {
+			if n.AccIndex == privIn.CommitmentIndex {
+				privkey, err := w.keychain.spendKey(n.KeyIndex)
+				if err != nil {
+					return nil, err
+				}
+				sig, err := privkey.Sign(sigHash)
+				if err != nil {
+					return nil, err
+				}
+				rawTx.PrivateInputs[i].UnlockingParams = [][]byte{sig}
+				continue inputLoop
+			}
+		}
+	}
+
+	// Create the transaction zk proof
 	privateParams := standard.PrivateParams{
 		Inputs:  rawTx.PrivateInputs,
 		Outputs: rawTx.PrivateOutputs,

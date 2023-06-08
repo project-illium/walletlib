@@ -7,13 +7,14 @@ package walletlib
 import (
 	"crypto/rand"
 	"errors"
-	libcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/project-illium/ilxd/blockchain"
 	"github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/transactions"
 	"github.com/project-illium/ilxd/zk/circuits/standard"
 	"github.com/project-illium/walletlib/pb"
+	mrand "math/rand"
+	"time"
 )
 
 type RawTransaction struct {
@@ -25,9 +26,8 @@ type RawTransaction struct {
 type InputSource func(amount types.Amount) (types.Amount, []*pb.SpendNote, error)
 type ChangeSource func() (Address, error)
 type ProofsSource func(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error)
-type KeySource func(index uint32) (libcrypto.PrivKey, error)
 
-func BuildTransaction(toAddr Address, toAmt types.Amount, fetchInputs InputSource, fetchChange ChangeSource, fetchProofs ProofsSource, fetchKey KeySource, feePerKB types.Amount) (*RawTransaction, error) {
+func BuildTransaction(toAddr Address, toAmt types.Amount, fetchInputs InputSource, fetchChange ChangeSource, fetchProofs ProofsSource, feePerKB types.Amount) (*RawTransaction, error) {
 	raw := &RawTransaction{
 		Tx:             &transactions.StandardTransaction{},
 		PrivateInputs:  []standard.PrivateInput{},
@@ -58,14 +58,8 @@ func BuildTransaction(toAddr Address, toAmt types.Amount, fetchInputs InputSourc
 	raw.Tx.TxoRoot = txoRoot[:]
 
 	// Build the inputs
-	keys := make([]libcrypto.PrivKey, 0, len(inputNotes))
 	for i, note := range inputNotes {
-		key, err := fetchKey(note.KeyIndex)
-		if err != nil {
-			return nil, err
-		}
-		keys = append(keys, key)
-		nullifier, privIn, err := buildInput(note, proofs[i], key)
+		nullifier, privIn, err := buildInput(note, proofs[i])
 		if err != nil {
 			return nil, err
 		}
@@ -96,18 +90,8 @@ func BuildTransaction(toAddr Address, toAmt types.Amount, fetchInputs InputSourc
 		raw.PrivateOutputs = append(raw.PrivateOutputs, privOut)
 	}
 
-	// Finally compute the sighash and sign all private inputs.
-	sigHash, err := raw.Tx.SigHash()
-	if err != nil {
-		return nil, err
-	}
-	for i, key := range keys {
-		sig, err := key.Sign(sigHash)
-		if err != nil {
-			return nil, err
-		}
-		raw.PrivateInputs[i].UnlockingParams = [][]byte{sig}
-	}
+	// Randomize input and output order
+	shuffleTransaction(raw)
 
 	return raw, nil
 }
@@ -131,12 +115,7 @@ func selectInputs(amount types.Amount, fetchInputs InputSource, feePerKB types.A
 	}
 }
 
-func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof, privKey libcrypto.PrivKey) (types.Nullifier, standard.PrivateInput, error) {
-	rawPub, err := privKey.GetPublic().Raw()
-	if err != nil {
-		return types.Nullifier{}, standard.PrivateInput{}, err
-	}
-
+func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nullifier, standard.PrivateInput, error) {
 	privIn := standard.PrivateInput{
 		Amount:          note.Amount,
 		CommitmentIndex: 0,
@@ -146,7 +125,7 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof, privKey li
 			Accumulator: proof.Accumulator,
 		},
 		ScriptCommitment: mockBasicUnlockScriptCommitment,
-		ScriptParams:     [][]byte{rawPub},
+		ScriptParams:     [][]byte{note.SpendPubkey},
 	}
 	copy(privIn.Salt[:], note.Salt)
 	copy(privIn.AssetID[:], note.Asset_ID)
@@ -200,4 +179,16 @@ func buildOutput(addr Address, amt types.Amount) (*transactions.Output, standard
 	}
 
 	return txOut, privOut, nil
+}
+
+func shuffleTransaction(raw *RawTransaction) {
+	mrand.Seed(time.Now().Unix())
+	mrand.Shuffle(len(raw.Tx.Nullifiers), func(i, j int) {
+		raw.Tx.Nullifiers[i], raw.Tx.Nullifiers[j] = raw.Tx.Nullifiers[j], raw.Tx.Nullifiers[i]
+		raw.PrivateInputs[i], raw.PrivateInputs[j] = raw.PrivateInputs[j], raw.PrivateInputs[i]
+	})
+	mrand.Shuffle(len(raw.Tx.Outputs), func(i, j int) {
+		raw.Tx.Outputs[i], raw.Tx.Outputs[j] = raw.Tx.Outputs[j], raw.Tx.Outputs[i]
+		raw.PrivateOutputs[i], raw.PrivateOutputs[j] = raw.PrivateOutputs[j], raw.PrivateOutputs[i]
+	})
 }

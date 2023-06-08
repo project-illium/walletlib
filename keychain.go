@@ -365,8 +365,8 @@ func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Addres
 	}
 
 	script := types.UnlockingScript{
-		SnarkVerificationKey: mockBasicUnlockScriptCommitment,
-		PublicParams:         [][]byte{rawPublic},
+		ScriptCommitment: mockBasicUnlockScriptCommitment,
+		ScriptParams:     [][]byte{rawPublic},
 	}
 
 	addr, err := NewBasicAddress(script, childViewKey.PrivateKey().GetPublic(), params)

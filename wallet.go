@@ -170,15 +170,21 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 					// TODO: log error
 					continue
 				}
+				spendPub, err := w.ds.Get(context.Background(), datastore.NewKey(SpendPubkeyDatastoreKeyPrefix+strconv.Itoa(int(keyIndex))))
+				if err != nil {
+					// TODO: log error
+					continue
+				}
 				dbNote := &pb.SpendNote{
-					Commitment: out.Commitment,
-					KeyIndex:   keyIndex,
-					ScriptHash: note.ScriptHash,
-					Amount:     uint64(note.Amount),
-					Asset_ID:   note.AssetID[:],
-					State:      note.State[:],
-					Salt:       note.Salt[:],
-					AccIndex:   match.AccIndex,
+					Commitment:  out.Commitment,
+					KeyIndex:    keyIndex,
+					ScriptHash:  note.ScriptHash,
+					Amount:      uint64(note.Amount),
+					Asset_ID:    note.AssetID[:],
+					State:       note.State[:],
+					Salt:        note.Salt[:],
+					SpendPubkey: spendPub,
+					AccIndex:    match.AccIndex,
 				}
 				ser, err := proto.Marshal(dbNote)
 				if err != nil {
@@ -186,11 +192,6 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 					continue
 				}
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment)), ser); err != nil {
-					// TODO: log error
-					continue
-				}
-				spendPub, err := w.ds.Get(context.Background(), datastore.NewKey(SpendPubkeyDatastoreKeyPrefix+strconv.Itoa(int(keyIndex))))
-				if err != nil {
 					// TODO: log error
 					continue
 				}
