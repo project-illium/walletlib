@@ -13,14 +13,17 @@ import (
 	"github.com/ipfs/go-datastore/query"
 	badger "github.com/ipfs/go-ds-badger"
 	"github.com/project-illium/ilxd/blockchain"
+	"github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/params"
 	"github.com/project-illium/ilxd/params/hash"
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
+	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"google.golang.org/protobuf/proto"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -28,12 +31,18 @@ import (
 const MnemonicEntropyBits = 256
 
 type Wallet struct {
-	ds       repo.Datastore
-	params   *params.NetworkParams
-	keychain *Keychain
+	ds              repo.Datastore
+	params          *params.NetworkParams
+	keychain        *Keychain
+	nullifiers      map[types.Nullifier]types.ID
+	feePerKB        types.Amount
+	fetchProofsFunc ProofsSource
+	broadcastFunc   BroadcastFunc
 
 	mtx sync.RWMutex
 }
+
+type BroadcastFunc func(tx *transactions.Transaction) error
 
 func NewWallet(opts ...Option) (*Wallet, error) {
 	var cfg config
@@ -73,95 +82,157 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		}
 	}
 
+	fpkb := types.Amount(repo.DefaultFeePerKilobyte)
+	if cfg.feePerKB != 0 {
+		fpkb = cfg.feePerKB
+	}
+
 	return &Wallet{
-		ds:       ds,
-		params:   cfg.params,
-		keychain: keychain,
-		mtx:      sync.RWMutex{},
+		ds:              ds,
+		params:          cfg.params,
+		keychain:        keychain,
+		nullifiers:      make(map[types.Nullifier]types.ID),
+		feePerKB:        fpkb,
+		broadcastFunc:   cfg.broadcastFunc,
+		fetchProofsFunc: cfg.fetchProofsFunc,
+		mtx:             sync.RWMutex{},
 	}, nil
 }
 
-func (w *Wallet) handleMatches(matches map[types.ID]*blockchain.ScanMatch) {
+func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchain.ScanMatch) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
-	txMap := make(map[types.ID]*transactions.Transaction)
-	for _, match := range matches {
-		outputs := match.Transaction.Outputs()
-		if match.OutputIndex >= len(outputs) {
-			// TODO: log error
-			continue
-		}
-		out := outputs[match.OutputIndex]
-
+	for _, tx := range blk.Transactions {
 		var (
-			keyFound = false
-			keyIndex = uint32(0)
+			isOurs    bool
+			walletOut types.Amount
+			walletIn  types.Amount
 		)
-		for _, k := range w.keychain.getViewKeys() {
-			if k.key.Equals(match.Key) {
-				keyFound = true
-				keyIndex = k.index
-				break
+		for _, n := range tx.Nullifiers() {
+			if commitment, ok := w.nullifiers[n]; ok {
+				b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
+				if err != nil {
+					// TODO: log err
+					continue
+				}
+				var note pb.SpendNote
+				if err := proto.Unmarshal(b, &note); err != nil {
+					// TODO: log err
+					continue
+				}
+				walletOut += types.Amount(note.Amount)
+				if err := w.ds.Delete(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String())); err != nil {
+					// TODO: log err
+					continue
+				}
+				if err := w.ds.Delete(context.Background(), datastore.NewKey(NullifierKeyPrefix+n.String())); err != nil {
+					// TODO: log err
+					continue
+				}
+				delete(w.nullifiers, n)
+			}
+			isOurs = true
+		}
+		for _, out := range tx.Outputs() {
+			if match, ok := matches[types.NewID(out.Commitment)]; ok {
+				var (
+					keyFound = false
+					keyIndex = uint32(0)
+				)
+				for _, k := range w.keychain.getViewKeys() {
+					if k.key.Equals(match.Key) {
+						keyFound = true
+						keyIndex = k.index
+						break
+					}
+				}
+
+				if !keyFound {
+					// TODO: log error
+					continue
+				}
+
+				note := types.SpendNote{}
+				if err := note.Deserialize(match.DecryptedNote); err != nil {
+					// TODO: log error
+					continue
+				}
+				if !bytes.Equal(hash.HashFunc(match.DecryptedNote), out.Commitment) {
+					// TODO: log error
+					continue
+				}
+				if note.AssetID.Compare(types.IlliumCoinID) != 0 {
+					// TODO: log error
+					continue
+				}
+				if note.Amount == 0 {
+					// TODO: log error
+					continue
+				}
+				dbNote := &pb.SpendNote{
+					Commitment: out.Commitment,
+					KeyIndex:   keyIndex,
+					ScriptHash: note.ScriptHash,
+					Amount:     uint64(note.Amount),
+					Asset_ID:   note.AssetID[:],
+					State:      note.State[:],
+					Salt:       note.Salt[:],
+					AccIndex:   match.AccIndex,
+				}
+				ser, err := proto.Marshal(dbNote)
+				if err != nil {
+					// TODO: log error
+					continue
+				}
+				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment)), ser); err != nil {
+					// TODO: log error
+					continue
+				}
+				spendPub, err := w.ds.Get(context.Background(), datastore.NewKey(SpendPubkeyDatastoreKeyPrefix+strconv.Itoa(int(keyIndex))))
+				if err != nil {
+					// TODO: log error
+					continue
+				}
+				nullifier, err := types.CalculateNullifier(match.AccIndex, note.Salt, mockBasicUnlockScriptCommitment, spendPub)
+				if err != nil {
+					// TODO: log error
+					continue
+				}
+				if err := w.ds.Put(context.Background(), datastore.NewKey(NullifierKeyPrefix+nullifier.String()), out.Commitment); err != nil {
+					// TODO: log error
+					continue
+				}
+				w.nullifiers[nullifier] = types.NewID(out.Commitment)
+				walletIn += note.Amount
+				isOurs = true
 			}
 		}
-		if !keyFound {
-			// TODO: log error
-			continue
-		}
 
-		note := types.SpendNote{}
-		if err := note.Deserialize(match.DecryptedNote); err != nil {
-			// TODO: log error
-			continue
-		}
-		if !bytes.Equal(hash.HashFunc(match.DecryptedNote), out.Commitment) {
-			// TODO: log error
-			continue
-		}
-		if note.AssetID.Compare(types.IlliumCoinID) != 0 {
-			// TODO: log error
-			continue
-		}
-		if note.Amount == 0 {
-			// TODO: log error
-			continue
-		}
-		dbNote := &pb.SpendNote{
-			Commitment: out.Commitment,
-			KeyIndex:   keyIndex,
-			ScriptHash: note.ScriptHash,
-			Amount:     uint64(note.Amount),
-			Asset_ID:   note.AssetID[:],
-			State:      note.State[:],
-			Salt:       note.Salt[:],
-		}
-		ser, err := proto.Marshal(dbNote)
-		if err != nil {
-			// TODO: log error
-			continue
-		}
-		if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment)), ser); err != nil {
-			// TODO: log error
-			continue
-		}
-		txMap[match.Transaction.ID()] = match.Transaction
-	}
-
-	for _, tx := range txMap {
-		ser, err := proto.Marshal(tx)
-		if err != nil {
-			// TODO: log error
-			continue
-		}
-		if err := w.ds.Put(context.Background(), datastore.NewKey(TransactionDatastoreKeyPrefix+tx.ID().String()), ser); err != nil {
-			// TODO: log error
-			continue
+		if isOurs {
+			txid := tx.ID()
+			wtx := &pb.WalletTransaction{
+				Txid:   txid[:],
+				AmtIn:  uint64(walletIn),
+				AmtOut: uint64(walletOut),
+			}
+			ser, err := proto.Marshal(wtx)
+			if err != nil {
+				// TODO: log error
+				continue
+			}
+			if err := w.ds.Put(context.Background(), datastore.NewKey(TransactionDatastoreKeyPrefix+tx.ID().String()), ser); err != nil {
+				// TODO: log error
+				continue
+			}
 		}
 	}
 }
 
 func (w *Wallet) MnemonicSeed() (string, error) {
+	w.mtx.RLock()
+	defer w.mtx.RUnlock()
+
 	mnemonic, err := w.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
 	if err != nil {
 		return "", err
@@ -233,7 +304,7 @@ func (w *Wallet) Notes() ([]types.SpendNote, error) {
 	return notes, nil
 }
 
-func (w *Wallet) GetTransactions() ([]*transactions.Transaction, error) {
+func (w *Wallet) GetTransactions() ([]*WalletTransaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
@@ -243,15 +314,28 @@ func (w *Wallet) GetTransactions() ([]*transactions.Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	txs := make([]*transactions.Transaction, 0, 5)
+	txs := make([]*WalletTransaction, 0, 5)
 	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
-		var tx transactions.Transaction
-		if err := proto.Unmarshal(result.Value, &tx); err != nil {
+		var wtx pb.WalletTransaction
+		if err := proto.Unmarshal(result.Value, &wtx); err != nil {
 			return nil, err
 		}
-		txs = append(txs, &tx)
+		txs = append(txs, &WalletTransaction{
+			Txid:      types.NewID(wtx.Txid),
+			AmountIn:  types.Amount(wtx.AmtIn),
+			AmountOut: types.Amount(wtx.AmtOut),
+		})
 	}
 	return txs, nil
+}
+
+func (w *Wallet) ViewKeys() []*crypto.Curve25519PrivateKey {
+	idks := w.keychain.getViewKeys()
+	keys := make([]*crypto.Curve25519PrivateKey, 0, len(idks))
+	for _, k := range idks {
+		keys = append(keys, k.key)
+	}
+	return keys
 }
 
 func (w *Wallet) PrivateKeys() (map[WalletPrivateKey]Address, error) {
@@ -278,6 +362,23 @@ func (w *Wallet) ChangeWalletPassphrase(currentPassphrase, newPassphrase string)
 	return w.keychain.ChangePassphrase(currentPassphrase, newPassphrase)
 }
 
+func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount) (types.ID, error) {
+	tx, err := w.buildAndProveTransaction(toAddr, amount, feePerKB)
+	if err != nil {
+		return types.ID{}, nil
+	}
+	if err := w.broadcastFunc(tx); err != nil {
+		return types.ID{}, nil
+	}
+	return tx.ID(), nil
+}
+
 func (w *Wallet) Close() {
 	w.ds.Close()
+}
+
+type WalletTransaction struct {
+	Txid      types.ID
+	AmountIn  types.Amount
+	AmountOut types.Amount
 }

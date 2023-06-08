@@ -80,7 +80,7 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 
 	seed := bip39.NewSeed(mnemonic, "")
 
-	addr, viewKey, err := newAddress(0, seed, params)
+	addr, spendPub, viewKey, err := newAddress(0, seed, params)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +94,9 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 	}
 
 	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+"0"), []byte(addr.String())); err != nil {
+		return nil, err
+	}
+	if err := ds.Put(context.Background(), datastore.NewKey(SpendPubkeyDatastoreKeyPrefix+"0"), spendPub); err != nil {
 		return nil, err
 	}
 
@@ -229,7 +232,7 @@ func (kc *Keychain) NewAddress() (Address, error) {
 		return nil, err
 	}
 	newIndex := uint32(index + 1)
-	addr, viewKey, err := newAddress(newIndex, kc.unencryptedSeed, kc.params)
+	addr, spendPub, viewKey, err := newAddress(newIndex, kc.unencryptedSeed, kc.params)
 	if err != nil {
 		return nil, err
 	}
@@ -244,6 +247,9 @@ func (kc *Keychain) NewAddress() (Address, error) {
 	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+strconv.Itoa(int(newIndex))), []byte(addr.String())); err != nil {
 		return nil, err
 	}
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(SpendPubkeyDatastoreKeyPrefix+strconv.Itoa(int(newIndex))), spendPub); err != nil {
+		return nil, err
+	}
 	kc.viewKeys = append(kc.viewKeys, &indexedViewKey{
 		key:   viewKey,
 		index: newIndex,
@@ -252,8 +258,8 @@ func (kc *Keychain) NewAddress() (Address, error) {
 }
 
 func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
-	kc.mtx.Lock()
-	defer kc.mtx.Unlock()
+	kc.mtx.RLock()
+	defer kc.mtx.RUnlock()
 
 	if kc.isEncrypted {
 		return nil, ErrEncryptedKeychain
@@ -312,27 +318,50 @@ func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
 	return keys, nil
 }
 
-func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Address, *icrypto.Curve25519PrivateKey, error) {
+func (kc *Keychain) spendKey(index uint32) (crypto.PrivKey, error) {
+	kc.mtx.RLock()
+	defer kc.mtx.RUnlock()
+
+	if kc.isEncrypted {
+		return nil, ErrEncryptedKeychain
+	}
+	if kc.isPruned {
+		return nil, ErrPublicOnlyKeychain
+	}
+
+	spendMaster, err := seedToSpendMaster(kc.unencryptedSeed)
+	if err != nil {
+		return nil, err
+	}
+
+	hdkey, err := spendMaster.Child(index)
+	if err != nil {
+		return nil, err
+	}
+	return hdkey.PrivKey, nil
+}
+
+func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Address, []byte, *icrypto.Curve25519PrivateKey, error) {
 	spendMaster, err := seedToSpendMaster(seed)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	childSpendKey, err := spendMaster.Child(index)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	rawPublic, err := childSpendKey.GetPublic().Raw()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	viewMaster, err := seedToViewMaster(seed)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	childViewKey, err := viewMaster.Child(index)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	script := types.UnlockingScript{
@@ -341,7 +370,7 @@ func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Addres
 	}
 
 	addr, err := NewBasicAddress(script, childViewKey.PrivateKey().GetPublic(), params)
-	return addr, childViewKey.PrivateKey().(*icrypto.Curve25519PrivateKey), err
+	return addr, rawPublic, childViewKey.PrivateKey().(*icrypto.Curve25519PrivateKey), err
 }
 
 func (kc *Keychain) SetPassphrase(passphrase string) error {

@@ -9,4 +9,11 @@ message SpendNote {
     bytes asset_ID   = 5;
     bytes state      = 6;
     bytes salt       = 7;
+    uint64 acc_index = 8;
+}
+
+message WalletTransaction {
+    bytes txid    = 1;
+    uint64 amtIn  = 2;
+    uint64 amtOut = 3;
 }

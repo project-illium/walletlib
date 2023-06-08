@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/project-illium/ilxd/params"
 	"github.com/project-illium/ilxd/repo"
+	"github.com/project-illium/ilxd/types"
 )
 
 // Option is configuration option function for the blockchain
@@ -51,11 +52,44 @@ func MnemonicSeed(mnemonic string) Option {
 	}
 }
 
+// FeePerKB sets the fee per kilobyte to use for sending transactions.
+func FeePerKB(fpkb types.Amount) Option {
+	return func(cfg *config) error {
+		cfg.feePerKB = fpkb
+		return nil
+	}
+}
+
+// ProofsSourceFunction is a function that looks up and returns an inclusion
+// proof for a given commitment.
+//
+// This function is not optional.
+func ProofsSourceFunction(proofSource ProofsSource) Option {
+	return func(cfg *config) error {
+		cfg.fetchProofsFunc = proofSource
+		return nil
+	}
+}
+
+// BroadcastFunction is a function to broadcast a transaction to the
+// network.
+//
+// This function is not optional.
+func BroadcastFunction(broadcast BroadcastFunc) Option {
+	return func(cfg *config) error {
+		cfg.broadcastFunc = broadcast
+		return nil
+	}
+}
+
 type config struct {
-	datastore repo.Datastore
-	params    *params.NetworkParams
-	dataDir   string
-	mnemonic  string
+	datastore       repo.Datastore
+	params          *params.NetworkParams
+	feePerKB        types.Amount
+	broadcastFunc   BroadcastFunc
+	fetchProofsFunc ProofsSource
+	dataDir         string
+	mnemonic        string
 }
 
 func (c *config) validate() error {
@@ -64,6 +98,12 @@ func (c *config) validate() error {
 	}
 	if c.dataDir == "" {
 		return errors.New("dataDir cannot be empty")
+	}
+	if c.broadcastFunc == nil {
+		return errors.New("broadcastfunc cannot be nil")
+	}
+	if c.fetchProofsFunc == nil {
+		return errors.New("fetchProofsFunc cannot be nil")
 	}
 	return nil
 }

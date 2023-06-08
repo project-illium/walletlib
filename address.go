@@ -20,6 +20,8 @@ const ScriptHashLength = hash.HashSize
 type Address interface {
 	EncodeAddress() string
 	String() string
+	ScriptHash() [32]byte
+	ViewKey() crypto.PubKey
 }
 
 type BasicAddress struct {
