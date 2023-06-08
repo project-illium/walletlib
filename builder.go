@@ -23,15 +23,30 @@ type RawTransaction struct {
 	PrivateOutputs []standard.PrivateOutput
 }
 
+type RawInput interface {
+	Commitment() []byte
+	PrivateInput() standard.PrivateInput
+}
+type RawOutput struct {
+	Addr   Address
+	Amount types.Amount
+}
+
 type InputSource func(amount types.Amount) (types.Amount, []*pb.SpendNote, error)
 type ChangeSource func() (Address, error)
 type ProofsSource func(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error)
 
-func BuildTransaction(toAddr Address, toAmt types.Amount, fetchInputs InputSource, fetchChange ChangeSource, fetchProofs ProofsSource, feePerKB types.Amount) (*RawTransaction, error) {
+func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange ChangeSource, fetchProofs ProofsSource, feePerKB types.Amount) (*RawTransaction, error) {
 	raw := &RawTransaction{
 		Tx:             &transactions.StandardTransaction{},
 		PrivateInputs:  []standard.PrivateInput{},
 		PrivateOutputs: []standard.PrivateOutput{},
+	}
+
+	// First calculate the out amount
+	toAmt := types.Amount(0)
+	for _, o := range outputs {
+		toAmt += o.Amount
 	}
 
 	// First select the inputs that will cover the amount
@@ -67,16 +82,18 @@ func BuildTransaction(toAddr Address, toAmt types.Amount, fetchInputs InputSourc
 		raw.PrivateInputs = append(raw.PrivateInputs, privIn)
 	}
 
-	// Build the "to" output
-	txOut, privOut, err := buildOutput(toAddr, toAmt)
-	if err != nil {
-		return nil, err
+	// Build the outputs
+	for _, o := range outputs {
+		txOut, privOut, err := buildOutput(o.Addr, o.Amount)
+		if err != nil {
+			return nil, err
+		}
+		raw.Tx.Outputs = append(raw.Tx.Outputs, txOut)
+		raw.PrivateOutputs = append(raw.PrivateOutputs, privOut)
 	}
-	raw.Tx.Outputs = append(raw.Tx.Outputs, txOut)
-	raw.PrivateOutputs = append(raw.PrivateOutputs, privOut)
 
 	// If we need a change output build that
-	if totalIn > toAmt+fee {
+	if totalIn > toAmt+fee && fetchChange != nil {
 		changeAddr, err := fetchChange()
 		if err != nil {
 			return nil, err
@@ -166,7 +183,7 @@ func buildOutput(addr Address, amt types.Amount) (*transactions.Output, standard
 	}
 
 	txOut := &transactions.Output{
-		Commitment: outputCommitment,
+		Commitment: outputCommitment[:],
 		Ciphertext: outputCipherText,
 	}
 

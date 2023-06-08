@@ -21,17 +21,12 @@ func TestBasicAddress(t *testing.T) {
 	_, viewKey, err := crypto2.GenerateCurve25519Key(rand.Reader)
 	assert.NoError(t, err)
 
-	_, verificationKey, err := crypto2.GenerateCurve25519Key(rand.Reader)
-	assert.NoError(t, err)
-
-	verificationKeyRaw, err := verificationKey.Raw()
-	assert.NoError(t, err)
 	pubKeyRaw, err := pubkey.Raw()
 	assert.NoError(t, err)
 
 	us := types.UnlockingScript{
-		SnarkVerificationKey: verificationKeyRaw,
-		PublicParams:         [][]byte{pubKeyRaw},
+		ScriptCommitment: mockBasicUnlockScriptCommitment,
+		ScriptParams:     [][]byte{pubKeyRaw},
 	}
 
 	addr, err := NewBasicAddress(us, viewKey, &params.MainnetParams)
