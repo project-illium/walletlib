@@ -93,6 +93,17 @@ func GetBlockFunction(getBlock GetBlockFunc) Option {
 	}
 }
 
+// GetAccumulatorCheckpointFunction is a function to fetch an accumulator checkpoint
+// from the blockchain.
+//
+// This function is not optional.
+func GetAccumulatorCheckpointFunction(getAccFunc GetAccumulatorCheckpointFunc) Option {
+	return func(cfg *config) error {
+		cfg.getAccFunc = getAccFunc
+		return nil
+	}
+}
+
 type config struct {
 	datastore       repo.Datastore
 	params          *params.NetworkParams
@@ -100,6 +111,7 @@ type config struct {
 	broadcastFunc   BroadcastFunc
 	fetchProofsFunc ProofsSource
 	getBlockFunc    GetBlockFunc
+	getAccFunc      GetAccumulatorCheckpointFunc
 	dataDir         string
 	mnemonic        string
 }
@@ -119,6 +131,9 @@ func (c *config) validate() error {
 	}
 	if c.getBlockFunc == nil {
 		return errors.New("getBlockFunc cannot be nil")
+	}
+	if c.getAccFunc == nil {
+		return errors.New("getAccFunc cannot be nil")
 	}
 	return nil
 }

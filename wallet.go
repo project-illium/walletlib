@@ -19,6 +19,7 @@ import (
 	"github.com/project-illium/ilxd/params"
 	"github.com/project-illium/ilxd/params/hash"
 	"github.com/project-illium/ilxd/repo"
+	"github.com/project-illium/ilxd/repo/mock"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,13 +45,16 @@ type Wallet struct {
 	fetchProofsFunc ProofsSource
 	broadcastFunc   BroadcastFunc
 	getBlocksFunc   GetBlockFunc
+	getAccFunc      GetAccumulatorCheckpointFunc
 	chainHeight     uint32
+	rescan          uint32
 
 	mtx sync.RWMutex
 }
 
 type BroadcastFunc func(tx *transactions.Transaction) error
 type GetBlockFunc func(height uint32) (*blocks.Block, error)
+type GetAccumulatorCheckpointFunc func(height uint32) (*blockchain.Accumulator, uint32, error)
 
 func NewWallet(opts ...Option) (*Wallet, error) {
 	var cfg config
@@ -129,6 +134,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		broadcastFunc:   cfg.broadcastFunc,
 		fetchProofsFunc: cfg.fetchProofsFunc,
 		getBlocksFunc:   cfg.getBlockFunc,
+		getAccFunc:      cfg.getAccFunc,
 		accdb:           adb,
 		chainHeight:     height,
 		mtx:             sync.RWMutex{},
@@ -144,7 +150,7 @@ func (w *Wallet) Start() {
 		if err != nil {
 			break
 		}
-		w.connectBlock(blk)
+		w.connectBlock(blk, w.scanner, w.accdb, false)
 	}
 }
 
@@ -152,13 +158,55 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
-	w.connectBlock(blk)
+	w.connectBlock(blk, w.scanner, w.accdb, false)
 }
 
-func (w *Wallet) connectBlock(blk *blocks.Block) {
-	matches := w.scanner.ScanOutputs(blk)
+func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519PrivateKey) error {
+	if atomic.SwapUint32(&w.rescan, 1) != 0 {
+		return errors.New("rescan already running")
+	}
 
-	accumulator := w.accdb.Accumulator()
+	scanner := NewTransactionScanner(keys...)
+	accdb := blockchain.NewAccumulatorDB(mock.NewMapDatastore())
+
+	checkpoint, height, err := w.getAccFunc(fromHeight)
+	if err != nil && !errors.Is(err, blockchain.ErrNoCheckpoint) {
+		return err
+	} else if err == nil {
+		if err := accdb.Commit(checkpoint, height, blockchain.FlushNop); err != nil {
+			return err
+		}
+	}
+
+	getHeight := height + 1
+	for {
+		blk, err := w.getBlocksFunc(getHeight)
+		if err != nil {
+			break
+		}
+
+		w.mtx.Lock()
+		w.connectBlock(blk, scanner, accdb, true)
+
+		if getHeight == w.chainHeight {
+			if err := w.accdb.Commit(accdb.Accumulator(), w.chainHeight, blockchain.FlushRequired); err != nil {
+				return err
+			}
+			atomic.SwapUint32(&w.rescan, 0)
+			w.mtx.Unlock()
+			return nil
+		}
+		getHeight++
+		w.mtx.Unlock()
+
+	}
+	return nil
+}
+
+func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, accdb *blockchain.AccumulatorDB, isRescan bool) {
+	matches := scanner.ScanOutputs(blk)
+
+	accumulator := accdb.Accumulator()
 
 	for _, tx := range blk.Transactions {
 		var (
@@ -222,6 +270,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block) {
 				}
 
 				dbNote := &pb.SpendNote{
+					Address:    addrInfo.Addr,
 					Commitment: out.Commitment,
 					KeyIndex:   addrInfo.KeyIndex,
 					ScriptHash: note.ScriptHash,
@@ -266,10 +315,12 @@ func (w *Wallet) connectBlock(blk *blocks.Block) {
 		if isOurs {
 			flushMode = blockchain.FlushRequired
 		}
-		if err := w.accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
+		if err := accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
 			// TODO: log error
 		}
-		w.chainHeight = blk.Header.Height
+		if !isRescan {
+			w.chainHeight = blk.Header.Height
+		}
 
 		if isOurs {
 			txid := tx.ID()
@@ -344,7 +395,7 @@ func (w *Wallet) Balance() (types.Amount, error) {
 	return amt, nil
 }
 
-func (w *Wallet) Notes() ([]types.SpendNote, error) {
+func (w *Wallet) Notes() ([]*pb.SpendNote, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
@@ -354,20 +405,13 @@ func (w *Wallet) Notes() ([]types.SpendNote, error) {
 	if err != nil {
 		return nil, err
 	}
-	notes := make([]types.SpendNote, 0, 5)
+	notes := make([]*pb.SpendNote, 0, 5)
 	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
 		var note pb.SpendNote
 		if err := proto.Unmarshal(result.Value, &note); err != nil {
 			return nil, err
 		}
-		n := types.SpendNote{
-			ScriptHash: note.ScriptHash,
-			Amount:     types.Amount(note.Amount),
-			AssetID:    types.NewID(note.Asset_ID),
-		}
-		copy(n.State[:], note.State)
-		copy(n.Salt[:], note.Salt)
-		notes = append(notes, n)
+		notes = append(notes, &note)
 	}
 	return notes, nil
 }
@@ -443,8 +487,26 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 	if !viewPrivkey.GetPublic().Equals(addr.ViewKey()) {
 		return errors.New("view key does not match address")
 	}
+	curveKey, ok := viewPrivkey.(*crypto.Curve25519PrivateKey)
+	if !ok {
+		return errors.New("view key is not curve25519")
+	}
 
-	return w.keychain.ImportAddress(addr, unlockingScript, viewPrivkey)
+	if rescan && atomic.LoadUint32(&w.rescan) != 0 {
+		return errors.New("rescan already running")
+	}
+
+	if err := w.keychain.ImportAddress(addr, unlockingScript, viewPrivkey); err != nil {
+		return err
+	}
+	if rescan {
+		go func() {
+			if err := w.rescanWallet(rescanHeight, curveKey); err != nil {
+				// TODO: log error
+			}
+		}()
+	}
+	return nil
 }
 
 func (w *Wallet) Close() {
