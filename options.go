@@ -82,12 +82,24 @@ func BroadcastFunction(broadcast BroadcastFunc) Option {
 	}
 }
 
+// GetBlockFunction is a function to fetch a block from the chain
+// given the height.
+//
+// This function is not optional.
+func GetBlockFunction(getBlock GetBlockFunc) Option {
+	return func(cfg *config) error {
+		cfg.getBlockFunc = getBlock
+		return nil
+	}
+}
+
 type config struct {
 	datastore       repo.Datastore
 	params          *params.NetworkParams
 	feePerKB        types.Amount
 	broadcastFunc   BroadcastFunc
 	fetchProofsFunc ProofsSource
+	getBlockFunc    GetBlockFunc
 	dataDir         string
 	mnemonic        string
 }
@@ -104,6 +116,9 @@ func (c *config) validate() error {
 	}
 	if c.fetchProofsFunc == nil {
 		return errors.New("fetchProofsFunc cannot be nil")
+	}
+	if c.getBlockFunc == nil {
+		return errors.New("getBlockFunc cannot be nil")
 	}
 	return nil
 }

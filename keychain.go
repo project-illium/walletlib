@@ -48,11 +48,6 @@ const (
 	defaultKeyLength = 32
 )
 
-type indexedViewKey struct {
-	key   *icrypto.Curve25519PrivateKey
-	index uint32
-}
-
 type Keychain struct {
 	ds              repo.Datastore
 	params          *params.NetworkParams

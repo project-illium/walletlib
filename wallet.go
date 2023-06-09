@@ -7,6 +7,7 @@ package walletlib
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"github.com/ipfs/go-datastore"
@@ -24,6 +25,7 @@ import (
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"google.golang.org/protobuf/proto"
+	"strings"
 	"sync"
 	"time"
 )
@@ -35,14 +37,19 @@ type Wallet struct {
 	params          *params.NetworkParams
 	keychain        *Keychain
 	nullifiers      map[types.Nullifier]types.ID
+	scanner         *TransactionScanner
+	accdb           *blockchain.AccumulatorDB
 	feePerKB        types.Amount
 	fetchProofsFunc ProofsSource
 	broadcastFunc   BroadcastFunc
+	getBlocksFunc   GetBlockFunc
+	chainHeight     uint32
 
 	mtx sync.RWMutex
 }
 
 type BroadcastFunc func(tx *transactions.Transaction) error
+type GetBlockFunc func(height uint32) (*blocks.Block, error)
 
 func NewWallet(opts ...Option) (*Wallet, error) {
 	var cfg config
@@ -82,26 +89,76 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		}
 	}
 
+	results, err := ds.Query(context.Background(), query.Query{
+		Prefix: NullifierKeyPrefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+	nullifiers := make(map[types.Nullifier]types.ID)
+	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
+		s := strings.Split(result.Key, "/")
+		n, err := types.NewNullifierFromString(s[len(s)-1])
+		if err != nil {
+			return nil, err
+		}
+		nullifiers[n] = types.NewID(result.Value)
+	}
+
 	fpkb := types.Amount(repo.DefaultFeePerKilobyte)
 	if cfg.feePerKB != 0 {
 		fpkb = cfg.feePerKB
+	}
+
+	adb := blockchain.NewAccumulatorDB(ds)
+
+	var height uint32
+	heightBytes, err := ds.Get(context.Background(), datastore.NewKey(WalletHeightDatastoreKey))
+	if err != nil && !errors.Is(err, datastore.ErrNotFound) {
+		return nil, err
+	} else if err == nil {
+		height = binary.BigEndian.Uint32(heightBytes)
 	}
 
 	return &Wallet{
 		ds:              ds,
 		params:          cfg.params,
 		keychain:        keychain,
-		nullifiers:      make(map[types.Nullifier]types.ID),
+		nullifiers:      nullifiers,
 		feePerKB:        fpkb,
 		broadcastFunc:   cfg.broadcastFunc,
 		fetchProofsFunc: cfg.fetchProofsFunc,
+		getBlocksFunc:   cfg.getBlockFunc,
+		accdb:           adb,
+		chainHeight:     height,
 		mtx:             sync.RWMutex{},
 	}, nil
 }
 
-func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchain.ScanMatch) {
+func (w *Wallet) Start() {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
+
+	for {
+		blk, err := w.getBlocksFunc(w.chainHeight + 1)
+		if err != nil {
+			break
+		}
+		w.connectBlock(blk)
+	}
+}
+
+func (w *Wallet) ConnectBlock(blk *blocks.Block) {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
+	w.connectBlock(blk)
+}
+
+func (w *Wallet) connectBlock(blk *blocks.Block) {
+	matches := w.scanner.ScanOutputs(blk)
+
+	accumulator := w.accdb.Accumulator()
 
 	for _, tx := range blk.Transactions {
 		var (
@@ -137,6 +194,9 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 		for _, out := range tx.Outputs() {
 			if match, ok := matches[types.NewID(out.Commitment)]; ok {
 
+				accumulator.Insert(out.Commitment, true)
+				commitmentIndex := accumulator.NumElements() - 1
+
 				addrInfo, err := w.keychain.addrInfo(match.Key)
 				if err != nil {
 					// TODO: log error
@@ -169,7 +229,7 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 					Asset_ID:   note.AssetID[:],
 					State:      note.State[:],
 					Salt:       note.Salt[:],
-					AccIndex:   match.AccIndex,
+					AccIndex:   commitmentIndex,
 					WatchOnly:  addrInfo.WatchOnly,
 					UnlockingScript: &pb.UnlockingScript{
 						ScriptCommitment: addrInfo.UnlockingScript.ScriptCommitment,
@@ -185,7 +245,7 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 					// TODO: log error
 					continue
 				}
-				nullifier, err := types.CalculateNullifier(match.AccIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
+				nullifier, err := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
 				if err != nil {
 					// TODO: log error
 					continue
@@ -197,8 +257,19 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 				w.nullifiers[nullifier] = types.NewID(out.Commitment)
 				walletIn += note.Amount
 				isOurs = true
+			} else {
+				accumulator.Insert(out.Commitment, false)
 			}
 		}
+
+		flushMode := blockchain.FlushPeriodic
+		if isOurs {
+			flushMode = blockchain.FlushRequired
+		}
+		if err := w.accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
+			// TODO: log error
+		}
+		w.chainHeight = blk.Header.Height
 
 		if isOurs {
 			txid := tx.ID()
@@ -215,6 +286,12 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 			if err := w.ds.Put(context.Background(), datastore.NewKey(TransactionDatastoreKeyPrefix+tx.ID().String()), ser); err != nil {
 				// TODO: log error
 				continue
+			}
+
+			heightBytes := make([]byte, 32)
+			binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
+			if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
+				// TODO: log error
 			}
 		}
 	}
@@ -371,6 +448,13 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 }
 
 func (w *Wallet) Close() {
+	heightBytes := make([]byte, 32)
+	binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
+	if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
+		// TODO: log error
+	}
+
+	w.accdb.Flush(blockchain.FlushRequired, w.chainHeight)
 	w.ds.Close()
 }
 

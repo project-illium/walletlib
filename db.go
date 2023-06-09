@@ -15,4 +15,5 @@ const (
 	NotesDatastoreKeyPrefix         = "/wallet/note/"
 	PassphraseHashDatastoreKey      = "/wallet/passphrase/"
 	NullifierKeyPrefix              = "/wallet/nullifier/"
+	WalletHeightDatastoreKey        = "/wallet/height/"
 )

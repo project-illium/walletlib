@@ -7,7 +7,7 @@ require (
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ds-badger v0.3.0
 	github.com/libp2p/go-libp2p v0.27.5
-	github.com/project-illium/ilxd v0.0.0-20230608203414-9c75db7aa66f
+	github.com/project-illium/ilxd v0.0.0-20230609141822-271bd5e74730
 	github.com/stretchr/testify v1.8.2
 	github.com/tyler-smith/go-bip39 v1.1.0
 	golang.org/x/crypto v0.9.0
