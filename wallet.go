@@ -125,6 +125,11 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		height = binary.BigEndian.Uint32(heightBytes)
 	}
 
+	viewKeys, err := keychain.getViewKeys()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Wallet{
 		ds:              ds,
 		params:          cfg.params,
@@ -137,6 +142,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		getAccFunc:      cfg.getAccFunc,
 		accdb:           adb,
 		chainHeight:     height,
+		scanner:         NewTransactionScanner(viewKeys...),
 		mtx:             sync.RWMutex{},
 	}, nil
 }
@@ -205,7 +211,6 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 
 func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, accdb *blockchain.AccumulatorDB, isRescan bool) {
 	matches := scanner.ScanOutputs(blk)
-
 	accumulator := accdb.Accumulator()
 
 	for _, tx := range blk.Transactions {
@@ -236,8 +241,8 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					continue
 				}
 				delete(w.nullifiers, n)
+				isOurs = true
 			}
-			isOurs = true
 		}
 		for _, out := range tx.Outputs() {
 			if match, ok := matches[types.NewID(out.Commitment)]; ok {
@@ -339,10 +344,12 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				continue
 			}
 
-			heightBytes := make([]byte, 32)
-			binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
-			if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
-				// TODO: log error
+			if !isRescan {
+				heightBytes := make([]byte, 32)
+				binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
+				if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
+					// TODO: log error
+				}
 			}
 		}
 	}

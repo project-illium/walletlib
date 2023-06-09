@@ -32,11 +32,8 @@ type scanWork struct {
 // transaction the accumulator and inclusion proofs, but that would require double
 // hashes of the accuumulator for every block.
 type TransactionScanner struct {
-	keys       []*crypto.Curve25519PrivateKey
-	workChan   chan *scanWork
-	resultChan chan *ScanMatch
-	done       chan struct{}
-	mtx        sync.Mutex
+	keys []*crypto.Curve25519PrivateKey
+	mtx  sync.Mutex
 }
 
 // NewTransactionScanner returns a new TransactionScanner
@@ -74,31 +71,31 @@ func (s *TransactionScanner) ScanOutputs(blk *blocks.Block) map[types.ID]*ScanMa
 		maxGoRoutines = outputs
 	}
 
+	done := make(chan struct{})
+	workChan := make(chan *scanWork)
+	resultChan := make(chan *ScanMatch)
+
 	for i := 0; i < maxGoRoutines; i++ {
-		go s.scanHandler()
+		go s.scanHandler(workChan, resultChan, done)
 	}
 
-	s.done = make(chan struct{})
-	s.workChan = make(chan *scanWork)
-	s.resultChan = make(chan *ScanMatch)
-
-	defer close(s.done)
-	defer close(s.resultChan)
+	defer close(done)
+	defer close(resultChan)
 
 	go func() {
 		for _, tx := range blk.Transactions {
 			for i := range tx.Outputs() {
-				s.workChan <- &scanWork{
+				workChan <- &scanWork{
 					tx:    tx,
 					index: i,
 				}
 			}
 		}
-		close(s.workChan)
+		close(workChan)
 	}()
 
 	for i := 0; i < outputs; i++ {
-		match := <-s.resultChan
+		match := <-resultChan
 		if match != nil {
 			ret[match.Commitment] = match
 		}
@@ -106,25 +103,25 @@ func (s *TransactionScanner) ScanOutputs(blk *blocks.Block) map[types.ID]*ScanMa
 	return ret
 }
 
-func (s *TransactionScanner) scanHandler() {
+func (s *TransactionScanner) scanHandler(workChan chan *scanWork, resultChan chan *ScanMatch, done chan struct{}) {
 	for {
 		select {
-		case w := <-s.workChan:
+		case w := <-workChan:
 			if w != nil {
 				for _, k := range s.keys {
 					decrypted, err := k.Decrypt(w.tx.Outputs()[w.index].Ciphertext)
 					if err == nil {
-						s.resultChan <- &ScanMatch{
+						resultChan <- &ScanMatch{
 							Key:           k,
 							Commitment:    types.NewID(w.tx.Outputs()[w.index].Commitment),
 							DecryptedNote: decrypted,
 						}
 					} else {
-						s.resultChan <- nil
+						resultChan <- nil
 					}
 				}
 			}
-		case <-s.done:
+		case <-done:
 			return
 		}
 	}
