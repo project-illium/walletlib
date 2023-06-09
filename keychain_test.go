@@ -29,14 +29,18 @@ func TestKeychain(t *testing.T) {
 
 	assert.False(t, kc.isEncrypted)
 	assert.False(t, kc.isPruned)
-	assert.Len(t, kc.viewKeys, 1)
+	viewkeys, err := kc.getViewKeys()
+	assert.NoError(t, err)
+	assert.Len(t, viewkeys, 1)
 
 	kc, err = LoadKeychain(ds, &params.RegestParams)
 	assert.NoError(t, err)
 
 	assert.False(t, kc.isEncrypted)
 	assert.False(t, kc.isPruned)
-	assert.Len(t, kc.viewKeys, 1)
+	viewkeys, err = kc.getViewKeys()
+	assert.NoError(t, err)
+	assert.Len(t, viewkeys, 1)
 
 	addr, err := kc.Address()
 	assert.NoError(t, err)
@@ -45,7 +49,9 @@ func TestKeychain(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.NotEqual(t, addr, addr2)
-	assert.Len(t, kc.viewKeys, 2)
+	viewkeys, err = kc.getViewKeys()
+	assert.NoError(t, err)
+	assert.Len(t, viewkeys, 2)
 
 	addr, err = kc.Address()
 	assert.NoError(t, err)
@@ -64,7 +70,9 @@ func TestKeychain(t *testing.T) {
 
 	_, err = kc.NewAddress()
 	assert.NoError(t, err)
-	assert.Len(t, kc.viewKeys, 3)
+	viewkeys, err = kc.getViewKeys()
+	assert.NoError(t, err)
+	assert.Len(t, viewkeys, 3)
 
 	assert.NoError(t, kc.Lock())
 	_, err = kc.NewAddress()
@@ -74,7 +82,9 @@ func TestKeychain(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.True(t, kc.isEncrypted)
-	assert.Len(t, kc.viewKeys, 3)
+	viewkeys, err = kc.getViewKeys()
+	assert.NoError(t, err)
+	assert.Len(t, viewkeys, 3)
 
 	_, err = kc.NewAddress()
 	assert.Error(t, err)
@@ -84,7 +94,9 @@ func TestKeychain(t *testing.T) {
 	assert.NoError(t, kc.Unlock("mooo", time.Second*10))
 	_, err = kc.NewAddress()
 	assert.NoError(t, err)
-	assert.Len(t, kc.viewKeys, 4)
+	viewkeys, err = kc.getViewKeys()
+	assert.NoError(t, err)
+	assert.Len(t, viewkeys, 4)
 
 	assert.NoError(t, kc.Lock())
 	assert.Error(t, kc.Unlock("letmein", time.Second*10))

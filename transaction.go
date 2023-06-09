@@ -10,6 +10,7 @@ import (
 	"errors"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/transactions"
 	"github.com/project-illium/ilxd/zk"
@@ -43,6 +44,10 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 			var note pb.SpendNote
 			if err := proto.Unmarshal(result.Value, &note); err != nil {
 				return 0, nil, err
+			}
+
+			if note.WatchOnly {
+				continue
 			}
 
 			if IsDustInput(types.Amount(note.Amount), feePerKB) {
@@ -145,6 +150,10 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 					return 0, nil, err
 				}
 
+				if note.WatchOnly {
+					continue
+				}
+
 				if IsDustInput(types.Amount(note.Amount), feePerKB) {
 					continue
 				}
@@ -207,14 +216,17 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 					}
 
 					note := &pb.SpendNote{
-						Commitment:  commitment[:],
-						ScriptHash:  scriptHash[:],
-						Amount:      privIn.Amount,
-						Asset_ID:    privIn.AssetID[:],
-						State:       privIn.State[:],
-						Salt:        privIn.Salt[:],
-						SpendPubkey: privIn.ScriptParams[0],
-						AccIndex:    privIn.CommitmentIndex,
+						Commitment: commitment[:],
+						ScriptHash: scriptHash[:],
+						Amount:     privIn.Amount,
+						Asset_ID:   privIn.AssetID[:],
+						State:      privIn.State[:],
+						Salt:       privIn.Salt[:],
+						UnlockingScript: &pb.UnlockingScript{
+							ScriptCommitment: privIn.ScriptCommitment,
+							ScriptParams:     privIn.ScriptParams,
+						},
+						AccIndex: privIn.CommitmentIndex,
 					}
 					if IsDustInput(types.Amount(note.Amount), feePerKB) {
 						continue
@@ -236,4 +248,55 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 	}
 
 	return BuildTransaction(outputs, inputSource, changeSource, w.fetchProofsFunc, feePerKB)
+}
+
+func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transactions.Transaction, error) {
+	if len(keys) != len(rawTx.PrivateInputs) {
+		return nil, errors.New("invalid number of keys")
+	}
+
+	// Sign the inputs
+	sigHash, err := rawTx.Tx.SigHash()
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range rawTx.PrivateInputs {
+		sig, err := keys[i].Sign(sigHash)
+		if err != nil {
+			return nil, err
+		}
+		rawTx.PrivateInputs[i].UnlockingParams = [][]byte{sig}
+	}
+
+	// Create the transaction zk proof
+	privateParams := standard.PrivateParams{
+		Inputs:  rawTx.PrivateInputs,
+		Outputs: rawTx.PrivateOutputs,
+	}
+	sighash, err := rawTx.Tx.SigHash()
+	if err != nil {
+		return nil, err
+	}
+	publicParams := standard.PublicParams{
+		TXORoot:    rawTx.Tx.TxoRoot,
+		SigHash:    sighash,
+		Nullifiers: rawTx.Tx.Nullifiers,
+		Fee:        rawTx.Tx.Fee,
+	}
+
+	for _, out := range rawTx.Tx.Outputs {
+		publicParams.Outputs = append(publicParams.Outputs, standard.PublicOutput{
+			Commitment: out.Commitment,
+			CipherText: out.Ciphertext,
+		})
+	}
+
+	proof, err := zk.CreateSnark(standard.StandardCircuit, privateParams, publicParams)
+	if err != nil {
+		return nil, err
+	}
+
+	rawTx.Tx.Proof = proof
+	return transactions.WrapTransaction(rawTx.Tx), nil
 }

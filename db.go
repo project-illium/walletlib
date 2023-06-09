@@ -7,8 +7,6 @@ package walletlib
 const (
 	MnemonicSeedDatastoreKey       = "/wallet/mnemonic/"
 	AddressIndexDatastoreKeyPrefix = "/wallet/address/"
-	ViewKeyDatastoreKeyPrefix      = "/wallet/viewkey/"
-	SpendPubkeyDatastoreKeyPrefix  = "/wallet/spendpubkey/"
 	KeyDatastoreSaltKey            = "/wallet/salt/"
 	WalletEncryptedDatastoreKey    = "/wallet/encrypted/"
 	TransactionDatastoreKeyPrefix  = "/wallet/transaction/"

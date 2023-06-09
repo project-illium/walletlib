@@ -12,6 +12,7 @@ import (
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	badger "github.com/ipfs/go-ds-badger"
+	lcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/project-illium/ilxd/blockchain"
 	"github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/params"
@@ -23,7 +24,6 @@ import (
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"google.golang.org/protobuf/proto"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -136,19 +136,9 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 		}
 		for _, out := range tx.Outputs() {
 			if match, ok := matches[types.NewID(out.Commitment)]; ok {
-				var (
-					keyFound = false
-					keyIndex = uint32(0)
-				)
-				for _, k := range w.keychain.getViewKeys() {
-					if k.key.Equals(match.Key) {
-						keyFound = true
-						keyIndex = k.index
-						break
-					}
-				}
 
-				if !keyFound {
+				addrInfo, err := w.keychain.addrInfo(match.Key)
+				if err != nil {
 					// TODO: log error
 					continue
 				}
@@ -170,21 +160,21 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 					// TODO: log error
 					continue
 				}
-				spendPub, err := w.ds.Get(context.Background(), datastore.NewKey(SpendPubkeyDatastoreKeyPrefix+strconv.Itoa(int(keyIndex))))
-				if err != nil {
-					// TODO: log error
-					continue
-				}
+
 				dbNote := &pb.SpendNote{
-					Commitment:  out.Commitment,
-					KeyIndex:    keyIndex,
-					ScriptHash:  note.ScriptHash,
-					Amount:      uint64(note.Amount),
-					Asset_ID:    note.AssetID[:],
-					State:       note.State[:],
-					Salt:        note.Salt[:],
-					SpendPubkey: spendPub,
-					AccIndex:    match.AccIndex,
+					Commitment: out.Commitment,
+					KeyIndex:   addrInfo.KeyIndex,
+					ScriptHash: note.ScriptHash,
+					Amount:     uint64(note.Amount),
+					Asset_ID:   note.AssetID[:],
+					State:      note.State[:],
+					Salt:       note.Salt[:],
+					AccIndex:   match.AccIndex,
+					WatchOnly:  addrInfo.WatchOnly,
+					UnlockingScript: &pb.UnlockingScript{
+						ScriptCommitment: addrInfo.UnlockingScript.ScriptCommitment,
+						ScriptParams:     addrInfo.UnlockingScript.ScriptParams,
+					},
 				}
 				ser, err := proto.Marshal(dbNote)
 				if err != nil {
@@ -195,7 +185,7 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block, matches map[types.ID]*blockchai
 					// TODO: log error
 					continue
 				}
-				nullifier, err := types.CalculateNullifier(match.AccIndex, note.Salt, mockBasicUnlockScriptCommitment, spendPub)
+				nullifier, err := types.CalculateNullifier(match.AccIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
 				if err != nil {
 					// TODO: log error
 					continue
@@ -330,13 +320,8 @@ func (w *Wallet) GetTransactions() ([]*WalletTransaction, error) {
 	return txs, nil
 }
 
-func (w *Wallet) ViewKeys() []*crypto.Curve25519PrivateKey {
-	idks := w.keychain.getViewKeys()
-	keys := make([]*crypto.Curve25519PrivateKey, 0, len(idks))
-	for _, k := range idks {
-		keys = append(keys, k.key)
-	}
-	return keys
+func (w *Wallet) ViewKeys() ([]*crypto.Curve25519PrivateKey, error) {
+	return w.keychain.getViewKeys()
 }
 
 func (w *Wallet) PrivateKeys() (map[WalletPrivateKey]Address, error) {
@@ -372,6 +357,17 @@ func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amoun
 		return types.ID{}, nil
 	}
 	return tx.ID(), nil
+}
+
+func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
+	if unlockingScript.Hash() != addr.ScriptHash() {
+		return errors.New("unlocking script does not match address")
+	}
+	if !viewPrivkey.GetPublic().Equals(addr.ViewKey()) {
+		return errors.New("view key does not match address")
+	}
+
+	return w.keychain.ImportAddress(addr, unlockingScript, viewPrivkey)
 }
 
 func (w *Wallet) Close() {
