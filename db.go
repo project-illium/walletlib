@@ -5,12 +5,14 @@
 package walletlib
 
 const (
-	MnemonicSeedDatastoreKey       = "/wallet/mnemonic/"
-	AddressIndexDatastoreKeyPrefix = "/wallet/address/"
-	KeyDatastoreSaltKey            = "/wallet/salt/"
-	WalletEncryptedDatastoreKey    = "/wallet/encrypted/"
-	TransactionDatastoreKeyPrefix  = "/wallet/transaction/"
-	NotesDatastoreKeyPrefix        = "/wallet/note/"
-	PassphraseHashDatastoreKey     = "/wallet/passphrase/"
-	NullifierKeyPrefix             = "/wallet/nullifier/"
+	MnemonicSeedDatastoreKey        = "/wallet/mnemonic/"
+	AddressDatastoreKeyPrefix       = "/wallet/address/"
+	CurrentAddressIndexDatastoreKey = "/wallet/addrindex/"
+	ViewKeyIndexDatastoreKey        = "/wallet/viewkeyindex/"
+	KeyDatastoreSaltKey             = "/wallet/salt/"
+	WalletEncryptedDatastoreKey     = "/wallet/encrypted/"
+	TransactionDatastoreKeyPrefix   = "/wallet/transaction/"
+	NotesDatastoreKeyPrefix         = "/wallet/note/"
+	PassphraseHashDatastoreKey      = "/wallet/passphrase/"
+	NullifierKeyPrefix              = "/wallet/nullifier/"
 )

@@ -100,4 +100,21 @@ func TestKeychain(t *testing.T) {
 
 	assert.NoError(t, kc.Lock())
 	assert.Error(t, kc.Unlock("letmein", time.Second*10))
+
+	addrs, err := kc.Addresses()
+	assert.NoError(t, err)
+	addr, unlockingScript, viewKey, err := newAddress(0, []byte{0xff}, &params.MainnetParams)
+	assert.NoError(t, err)
+
+	assert.NoError(t, kc.ImportAddress(addr, unlockingScript, viewKey))
+	addrs2, err := kc.Addresses()
+	assert.NoError(t, err)
+	assert.Len(t, addrs2, len(addrs)+1)
+
+	addr2, err = kc.Address()
+	assert.NoError(t, err)
+	assert.NotEqual(t, addr2, addr)
+
+	_, err = kc.addrInfo(viewKey)
+	assert.NoError(t, err)
 }

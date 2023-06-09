@@ -26,8 +26,6 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 	"google.golang.org/protobuf/proto"
 	"io"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -107,7 +105,13 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	if err := ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+"0"), ser); err != nil {
+	if err := ds.Put(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser); err != nil {
+		return nil, err
+	}
+	if err := ds.Put(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey), []byte(addr.String())); err != nil {
+		return nil, err
+	}
+	if err := ds.Put(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
 		return nil, err
 	}
 
@@ -121,7 +125,7 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 }
 
 func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, error) {
-	_, err := ds.Get(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+"0"))
+	_, err := ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
 		return nil, ErrUninitializedKeychain
 	}
@@ -153,7 +157,7 @@ func (kc *Keychain) Addresses() ([]Address, error) {
 	defer kc.mtx.RUnlock()
 
 	results, err := kc.ds.Query(context.Background(), query.Query{
-		Prefix: AddressIndexDatastoreKeyPrefix,
+		Prefix: AddressDatastoreKeyPrefix,
 		Orders: []query.Order{query.OrderByKeyDescending{}},
 	})
 	if err != nil {
@@ -179,28 +183,12 @@ func (kc *Keychain) Address() (Address, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
-	results, err := kc.ds.Query(context.Background(), query.Query{
-		Prefix: AddressIndexDatastoreKeyPrefix,
-		Orders: []query.Order{query.OrderByKeyDescending{}},
-		Limit:  1,
-	})
+	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
 		return nil, err
 	}
-	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
-		var addrInfo pb.AddrInfo
-		if err := proto.Unmarshal(result.Value, &addrInfo); err != nil {
-			return nil, err
-		}
 
-		if addrInfo.WatchOnly {
-			continue
-		}
-
-		return DecodeAddress(addrInfo.Addr, kc.params)
-	}
-
-	return nil, errors.New("no addresses not found")
+	return DecodeAddress(string(addrStr), kc.params)
 }
 
 func (kc *Keychain) NewAddress() (Address, error) {
@@ -214,35 +202,21 @@ func (kc *Keychain) NewAddress() (Address, error) {
 		return nil, ErrPublicOnlyKeychain
 	}
 
-	results, err := kc.ds.Query(context.Background(), query.Query{
-		Prefix: AddressIndexDatastoreKeyPrefix,
-		Orders: []query.Order{query.OrderByKeyDescending{}},
-		Limit:  1,
-	})
+	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+	if err != nil {
+		return nil, err
+	}
+	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
 	if err != nil {
 		return nil, err
 	}
 
-	newIndex := uint32(0)
-	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
-		var addrInfo pb.AddrInfo
-		if err := proto.Unmarshal(result.Value, &addrInfo); err != nil {
-			return nil, err
-		}
-
-		if addrInfo.WatchOnly {
-			continue
-		}
-
-		split := strings.Split(result.Key, "/")
-
-		index, err := strconv.Atoi(split[len(split)-1])
-		if err != nil {
-			return nil, err
-		}
-		newIndex = uint32(index + 1)
-		break
+	var currentAddrInfo pb.AddrInfo
+	if err := proto.Unmarshal(ser, &currentAddrInfo); err != nil {
+		return nil, err
 	}
+
+	newIndex := currentAddrInfo.KeyIndex + 1
 
 	addr, unlockingScript, viewKey, err := newAddress(newIndex, kc.unencryptedSeed, kc.params)
 	if err != nil {
@@ -264,12 +238,18 @@ func (kc *Keychain) NewAddress() (Address, error) {
 		KeyIndex:    newIndex,
 	}
 
-	ser, err := proto.Marshal(addrInfo)
+	ser, err = proto.Marshal(addrInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+strconv.Itoa(int(newIndex))), ser); err != nil {
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser); err != nil {
+		return nil, err
+	}
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey), []byte(addr.String())); err != nil {
+		return nil, err
+	}
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
 		return nil, err
 	}
 
@@ -288,7 +268,7 @@ func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
 	}
 
 	results, err := kc.ds.Query(context.Background(), query.Query{
-		Prefix: AddressIndexDatastoreKeyPrefix,
+		Prefix: AddressDatastoreKeyPrefix,
 	})
 	if err != nil {
 		return nil, err
@@ -314,13 +294,8 @@ func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
 		if err != nil {
 			return nil, err
 		}
-		split := strings.Split(result.Key, "/")
 
-		index, err := strconv.Atoi(split[len(split)-1])
-		if err != nil {
-			return nil, err
-		}
-		childSpendKey, err := spendMaster.Child(uint32(index))
+		childSpendKey, err := spendMaster.Child(addrInfo.KeyIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -328,7 +303,7 @@ func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
 		if err != nil {
 			return nil, err
 		}
-		childViewKey, err := viewMaster.Child(uint32(index))
+		childViewKey, err := viewMaster.Child(addrInfo.KeyIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -358,6 +333,11 @@ func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.UnlockingS
 		return err
 	}
 
+	_, err = kc.ds.Get(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)))
+	if !errors.Is(err, datastore.ErrNotFound) {
+		return errors.New("view key already exists in wallet")
+	}
+
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
 		UnlockingScript: &pb.UnlockingScript{
@@ -373,10 +353,11 @@ func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.UnlockingS
 		return err
 	}
 
-	b := make([]byte, 20)
-	rand.Read(b)
+	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
+		return err
+	}
 
-	return kc.ds.Put(context.Background(), datastore.NewKey(AddressIndexDatastoreKeyPrefix+hex.EncodeToString(b)), ser)
+	return kc.ds.Put(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser)
 }
 
 func (kc *Keychain) spendKey(index uint32) (crypto.PrivKey, error) {
@@ -403,27 +384,23 @@ func (kc *Keychain) spendKey(index uint32) (crypto.PrivKey, error) {
 }
 
 func (kc *Keychain) addrInfo(viewKey crypto.PrivKey) (*pb.AddrInfo, error) {
-	results, err := kc.ds.Query(context.Background(), query.Query{
-		Prefix: AddressIndexDatastoreKeyPrefix,
-	})
+	serializedKey, err := crypto.MarshalPrivateKey(viewKey)
 	if err != nil {
 		return nil, err
 	}
-	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
-		var addrInfo pb.AddrInfo
-		if err := proto.Unmarshal(result.Value, &addrInfo); err != nil {
-			return nil, err
-		}
-
-		key, err := crypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
-		if err != nil {
-			return nil, err
-		}
-		if key.Equals(viewKey) {
-			return &addrInfo, nil
-		}
+	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)))
+	if err != nil {
+		return nil, err
 	}
-	return nil, errors.New("addr info not found")
+	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
+	if err != nil {
+		return nil, err
+	}
+	var addrInfo pb.AddrInfo
+	if err := proto.Unmarshal(ser, &addrInfo); err != nil {
+		return nil, err
+	}
+	return &addrInfo, nil
 }
 
 func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Address, types.UnlockingScript, *icrypto.Curve25519PrivateKey, error) {
@@ -697,7 +674,7 @@ func (kc *Keychain) getViewKeys() ([]*icrypto.Curve25519PrivateKey, error) {
 
 	viewKeys := make([]*icrypto.Curve25519PrivateKey, 0, 1)
 	results, err := kc.ds.Query(context.Background(), query.Query{
-		Prefix: AddressIndexDatastoreKeyPrefix,
+		Prefix: AddressDatastoreKeyPrefix,
 		Orders: []query.Order{query.OrderByKeyDescending{}},
 	})
 	if err != nil {
@@ -707,10 +684,6 @@ func (kc *Keychain) getViewKeys() ([]*icrypto.Curve25519PrivateKey, error) {
 		var addrInfo pb.AddrInfo
 		if err := proto.Unmarshal(result.Value, &addrInfo); err != nil {
 			return nil, err
-		}
-
-		if addrInfo.WatchOnly {
-			continue
 		}
 
 		privKey, err := crypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
