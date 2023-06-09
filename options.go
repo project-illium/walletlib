@@ -60,17 +60,6 @@ func FeePerKB(fpkb types.Amount) Option {
 	}
 }
 
-// ProofsSourceFunction is a function that looks up and returns an inclusion
-// proof for a given commitment.
-//
-// This function is not optional.
-func ProofsSourceFunction(proofSource ProofsSource) Option {
-	return func(cfg *config) error {
-		cfg.fetchProofsFunc = proofSource
-		return nil
-	}
-}
-
 // BroadcastFunction is a function to broadcast a transaction to the
 // network.
 //
@@ -105,15 +94,14 @@ func GetAccumulatorCheckpointFunction(getAccFunc GetAccumulatorCheckpointFunc) O
 }
 
 type config struct {
-	datastore       repo.Datastore
-	params          *params.NetworkParams
-	feePerKB        types.Amount
-	broadcastFunc   BroadcastFunc
-	fetchProofsFunc ProofsSource
-	getBlockFunc    GetBlockFunc
-	getAccFunc      GetAccumulatorCheckpointFunc
-	dataDir         string
-	mnemonic        string
+	datastore     repo.Datastore
+	params        *params.NetworkParams
+	feePerKB      types.Amount
+	broadcastFunc BroadcastFunc
+	getBlockFunc  GetBlockFunc
+	getAccFunc    GetAccumulatorCheckpointFunc
+	dataDir       string
+	mnemonic      string
 }
 
 func (c *config) validate() error {
@@ -125,9 +113,6 @@ func (c *config) validate() error {
 	}
 	if c.broadcastFunc == nil {
 		return errors.New("broadcastfunc cannot be nil")
-	}
-	if c.fetchProofsFunc == nil {
-		return errors.New("fetchProofsFunc cannot be nil")
 	}
 	if c.getBlockFunc == nil {
 		return errors.New("getBlockFunc cannot be nil")

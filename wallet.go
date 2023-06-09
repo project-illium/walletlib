@@ -35,19 +35,18 @@ import (
 const MnemonicEntropyBits = 256
 
 type Wallet struct {
-	ds              repo.Datastore
-	params          *params.NetworkParams
-	keychain        *Keychain
-	nullifiers      map[types.Nullifier]types.ID
-	scanner         *TransactionScanner
-	accdb           *blockchain.AccumulatorDB
-	feePerKB        types.Amount
-	fetchProofsFunc ProofsSource
-	broadcastFunc   BroadcastFunc
-	getBlocksFunc   GetBlockFunc
-	getAccFunc      GetAccumulatorCheckpointFunc
-	chainHeight     uint32
-	rescan          uint32
+	ds            repo.Datastore
+	params        *params.NetworkParams
+	keychain      *Keychain
+	nullifiers    map[types.Nullifier]types.ID
+	scanner       *TransactionScanner
+	accdb         *blockchain.AccumulatorDB
+	feePerKB      types.Amount
+	broadcastFunc BroadcastFunc
+	getBlocksFunc GetBlockFunc
+	getAccFunc    GetAccumulatorCheckpointFunc
+	chainHeight   uint32
+	rescan        uint32
 
 	mtx sync.RWMutex
 }
@@ -131,19 +130,18 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 	}
 
 	return &Wallet{
-		ds:              ds,
-		params:          cfg.params,
-		keychain:        keychain,
-		nullifiers:      nullifiers,
-		feePerKB:        fpkb,
-		broadcastFunc:   cfg.broadcastFunc,
-		fetchProofsFunc: cfg.fetchProofsFunc,
-		getBlocksFunc:   cfg.getBlockFunc,
-		getAccFunc:      cfg.getAccFunc,
-		accdb:           adb,
-		chainHeight:     height,
-		scanner:         NewTransactionScanner(viewKeys...),
-		mtx:             sync.RWMutex{},
+		ds:            ds,
+		params:        cfg.params,
+		keychain:      keychain,
+		nullifiers:    nullifiers,
+		feePerKB:      fpkb,
+		broadcastFunc: cfg.broadcastFunc,
+		getBlocksFunc: cfg.getBlockFunc,
+		getAccFunc:    cfg.getAccFunc,
+		accdb:         adb,
+		chainHeight:   height,
+		scanner:       NewTransactionScanner(viewKeys...),
+		mtx:           sync.RWMutex{},
 	}, nil
 }
 
@@ -487,6 +485,19 @@ func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amoun
 	return tx.ID(), nil
 }
 
+func (w *Wallet) Stake(commitments []types.ID) error {
+	for _, commitment := range commitments {
+		tx, err := w.buildAndProveStakeTransaction(commitment)
+		if err != nil {
+			return err
+		}
+		if err := w.broadcastFunc(tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
 	if unlockingScript.Hash() != addr.ScriptHash() {
 		return errors.New("unlocking script does not match address")
@@ -514,6 +525,20 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 		}()
 	}
 	return nil
+}
+
+func (w *Wallet) getProofs(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error) {
+	acc := w.accdb.Accumulator()
+
+	proofs := make([]*blockchain.InclusionProof, 0, len(commitments))
+	for _, commitment := range commitments {
+		proof, err := acc.GetProof(commitment[:])
+		if err != nil {
+			return nil, types.ID{}, err
+		}
+		proofs = append(proofs, proof)
+	}
+	return proofs, acc.Root(), nil
 }
 
 func (w *Wallet) Close() {

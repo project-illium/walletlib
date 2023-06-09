@@ -355,6 +355,20 @@ func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.UnlockingS
 	return kc.ds.Put(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser)
 }
 
+func (kc *Keychain) NetworkKey() (crypto.PrivKey, error) {
+	kc.mtx.RLock()
+	defer kc.mtx.RUnlock()
+
+	if kc.isEncrypted {
+		return nil, ErrEncryptedKeychain
+	}
+	if kc.isPruned {
+		return nil, ErrPublicOnlyKeychain
+	}
+
+	return seedToNetworkKey(kc.unencryptedSeed)
+}
+
 func (kc *Keychain) spendKey(index uint32) (crypto.PrivKey, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()

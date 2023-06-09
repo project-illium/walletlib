@@ -11,12 +11,15 @@ import (
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/transactions"
 	"github.com/project-illium/ilxd/zk"
+	"github.com/project-illium/ilxd/zk/circuits/stake"
 	"github.com/project-illium/ilxd/zk/circuits/standard"
 	"github.com/project-illium/walletlib/pb"
 	"google.golang.org/protobuf/proto"
+	"time"
 )
 
 var ErrInsufficientFunds = errors.New("insufficient funds")
@@ -64,7 +67,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 	}
 
 	// Build tx
-	rawTx, err := BuildTransaction([]*RawOutput{{toAddr, amount}}, inputSource, w.keychain.Address, w.fetchProofsFunc, feePerKB)
+	rawTx, err := BuildTransaction([]*RawOutput{{toAddr, amount}}, inputSource, w.keychain.Address, w.getProofs, feePerKB)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +250,7 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 		changeSource = w.Address
 	}
 
-	return BuildTransaction(outputs, inputSource, changeSource, w.fetchProofsFunc, feePerKB)
+	return BuildTransaction(outputs, inputSource, changeSource, w.getProofs, feePerKB)
 }
 
 func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transactions.Transaction, error) {
@@ -299,4 +302,99 @@ func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transac
 
 	rawTx.Tx.Proof = proof
 	return transactions.WrapTransaction(rawTx.Tx), nil
+}
+
+func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactions.Transaction, error) {
+	w.mtx.RLock()
+	defer w.mtx.RUnlock()
+
+	noteBytes, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
+	if err != nil {
+		return nil, err
+	}
+	var note pb.SpendNote
+	if err := proto.Unmarshal(noteBytes, &note); err != nil {
+		return nil, err
+	}
+
+	networkKey, err := w.keychain.NetworkKey()
+	if err != nil {
+		return nil, err
+	}
+
+	peerID, err := peer.IDFromPrivateKey(networkKey)
+	if err != nil {
+		return nil, err
+	}
+
+	peerIDBytes, err := peerID.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	var salt [32]byte
+	copy(salt[:], note.Salt)
+
+	proofs, txoRoot, err := w.getProofs(commitment)
+	if err != nil {
+		return nil, err
+	}
+	if len(proofs) == 0 {
+		return nil, errors.New("error fetch inclusion proof")
+	}
+
+	nullifier, privateInput, err := buildInput(&note, proofs[0])
+	if err != nil {
+		return nil, err
+	}
+
+	tx := &transactions.StakeTransaction{
+		Validator_ID: peerIDBytes,
+		Amount:       note.Amount,
+		Nullifier:    nullifier[:],
+		TxoRoot:      txoRoot[:],
+		Signature:    nil,
+		Proof:        nil,
+	}
+
+	sigHash, err := tx.SigHash()
+	if err != nil {
+		return nil, err
+	}
+
+	key, err := w.keychain.spendKey(note.KeyIndex)
+	if err != nil {
+		return nil, err
+	}
+	sig, err := key.Sign(sigHash)
+	if err != nil {
+		return nil, err
+	}
+	tx.Signature = sig
+
+	// Create the transaction zk proof
+	privateParams := stake.PrivateParams{
+		AssetID:          privateInput.AssetID,
+		Salt:             privateInput.Salt,
+		State:            privateInput.State,
+		CommitmentIndex:  privateInput.CommitmentIndex,
+		InclusionProof:   privateInput.InclusionProof,
+		ScriptCommitment: privateInput.ScriptCommitment,
+		ScriptParams:     privateInput.ScriptParams,
+		UnlockingParams:  privateInput.UnlockingParams,
+	}
+
+	publicParams := stake.PublicParams{
+		TXORoot:   txoRoot[:],
+		SigHash:   sigHash,
+		Amount:    note.Amount,
+		Nullifier: nullifier[:],
+		Locktime:  time.Time{},
+	}
+
+	proof, err := zk.CreateSnark(stake.StakeCircuit, privateParams, publicParams)
+	if err != nil {
+		return nil, err
+	}
+	tx.Proof = proof
+	return transactions.WrapTransaction(tx), nil
 }
