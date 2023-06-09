@@ -12,7 +12,8 @@ message SpendNote {
     bytes salt                       = 8;
     uint64 acc_index                 = 9;
     bool watch_only                  = 10;
-    UnlockingScript unlocking_script = 11;
+    bool staked                      = 11;
+    UnlockingScript unlocking_script = 12;
 }
 
 message WalletTransaction {

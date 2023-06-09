@@ -313,6 +313,35 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				accumulator.Insert(out.Commitment, false)
 			}
 		}
+		for _, tx := range blk.Transactions {
+			stakeTx := tx.GetStakeTransaction()
+			if stakeTx != nil {
+				commitment, ok := w.nullifiers[types.NewNullifier(stakeTx.Nullifier)]
+				if ok {
+					b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
+					if err != nil {
+						// TODO: log err
+						continue
+					}
+					var note pb.SpendNote
+					if err := proto.Unmarshal(b, &note); err != nil {
+						// TODO: log err
+						continue
+					}
+					note.Staked = true
+
+					ser, err := proto.Marshal(&note)
+					if err != nil {
+						// TODO: log err
+						continue
+					}
+					if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()), ser); err != nil {
+						// TODO: log err
+						continue
+					}
+				}
+			}
+		}
 
 		flushMode := blockchain.FlushPeriodic
 		if isOurs {

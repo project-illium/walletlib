@@ -361,11 +361,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 		return nil, err
 	}
 
-	key, err := w.keychain.spendKey(note.KeyIndex)
-	if err != nil {
-		return nil, err
-	}
-	sig, err := key.Sign(sigHash)
+	sig, err := networkKey.Sign(sigHash)
 	if err != nil {
 		return nil, err
 	}
@@ -392,6 +388,73 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	}
 
 	proof, err := zk.CreateSnark(stake.StakeCircuit, privateParams, publicParams)
+	if err != nil {
+		return nil, err
+	}
+	tx.Proof = proof
+	return transactions.WrapTransaction(tx), nil
+}
+
+func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, networkKey crypto.PrivKey) (*transactions.Transaction, error) {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
+	addr, err := w.keychain.Address()
+	if err != nil {
+		return nil, err
+	}
+
+	peerID, err := peer.IDFromPrivateKey(networkKey)
+	if err != nil {
+		return nil, err
+	}
+
+	peerIDBytes, err := peerID.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	output, privOut, err := buildOutput(addr, unclaimedCoins)
+	if err != nil {
+		return nil, err
+	}
+
+	tx := &transactions.CoinbaseTransaction{
+		Validator_ID: peerIDBytes,
+		NewCoins:     uint64(unclaimedCoins),
+		Outputs:      []*transactions.Output{output},
+		Signature:    nil,
+		Proof:        nil,
+	}
+
+	sigHash, err := tx.SigHash()
+	if err != nil {
+		return nil, err
+	}
+
+	sig, err := networkKey.Sign(sigHash)
+	if err != nil {
+		return nil, err
+	}
+	tx.Signature = sig
+
+	// Create the transaction zk proof
+	privateParams := standard.PrivateParams{
+		Outputs: []standard.PrivateOutput{privOut},
+	}
+
+	publicParams := standard.PublicParams{
+		Coinbase:   uint64(unclaimedCoins),
+	}
+
+	for _, out := range tx.Outputs {
+		publicParams.Outputs = append(publicParams.Outputs, standard.PublicOutput{
+			Commitment: out.Commitment,
+			CipherText: out.Ciphertext,
+		})
+	}
+
+	proof, err := zk.CreateSnark(standard.StandardCircuit, privateParams, publicParams)
 	if err != nil {
 		return nil, err
 	}
