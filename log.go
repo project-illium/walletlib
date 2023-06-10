@@ -6,4 +6,9 @@ package walletlib
 
 import "go.uber.org/zap"
 
-var log *zap.SugaredLogger
+var log = zap.S()
+
+func UpdateLogger(logger *zap.Logger) {
+	zap.ReplaceGlobals(logger)
+	log = zap.S()
+}
