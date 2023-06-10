@@ -110,7 +110,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, types.Amount(0), balance)
 
-	txs, err := w.GetTransactions()
+	txs, err := w.Transactions()
 	assert.NoError(t, err)
 	assert.Len(t, txs, 2)
 
@@ -142,7 +142,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, types.Amount(0), balance)
 
-	txs, err = w.GetTransactions()
+	txs, err = w.Transactions()
 	assert.NoError(t, err)
 	assert.Len(t, txs, 2)
 
@@ -166,7 +166,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, toAmount, balance)
 
-	txs, err = w.GetTransactions()
+	txs, err = w.Transactions()
 	assert.NoError(t, err)
 	assert.Len(t, txs, 3)
 }

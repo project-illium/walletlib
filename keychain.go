@@ -34,6 +34,7 @@ var (
 	ErrUninitializedKeychain = errors.New("keychain uninitialized")
 	ErrEncryptedKeychain     = errors.New("keychain encrypted")
 	ErrPublicOnlyKeychain    = errors.New("keychain public only")
+	ErrPermissionDenied      = errors.New("permission denied")
 
 	mockBasicUnlockScriptCommitment = bytes.Repeat([]byte{0xff}, 32)
 )
@@ -528,7 +529,7 @@ func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) er
 	}
 	pkh := sha256.Sum256(dk)
 	if !bytes.Equal(pkh[:], h) {
-		return errors.New("invalid passphrase")
+		return ErrPermissionDenied
 	}
 
 	block, err := aes.NewCipher(dk)
@@ -600,7 +601,7 @@ func (kc *Keychain) Unlock(passphrase string, duration time.Duration) error {
 	}
 	pkh := sha256.Sum256(dk)
 	if !bytes.Equal(pkh[:], h) {
-		return errors.New("invalid passphrase")
+		return ErrPermissionDenied
 	}
 
 	block, err := aes.NewCipher(dk)
@@ -647,28 +648,13 @@ func (kc *Keychain) Lock() error {
 	return nil
 }
 
-func (kc *Keychain) Prune(passphrase string) error {
+func (kc *Keychain) Prune() error {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
 
 	if kc.isEncrypted {
-		salt, err := kc.ds.Get(context.Background(), datastore.NewKey(KeyDatastoreSaltKey))
-		if err != nil {
-			return err
-		}
-
-		dk := pbkdf2.Key([]byte(passphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
-
-		h, err := kc.ds.Get(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey))
-		if err != nil {
-			return err
-		}
-		pkh := sha256.Sum256(dk)
-		if !bytes.Equal(pkh[:], h) {
-			return errors.New("invalid passphrase")
-		}
+		return ErrEncryptedKeychain
 	}
-
 	if err := kc.ds.Delete(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey)); err != nil {
 		return err
 	}

@@ -483,7 +483,7 @@ func (w *Wallet) Notes() ([]*pb.SpendNote, error) {
 	return notes, nil
 }
 
-func (w *Wallet) GetTransactions() ([]*WalletTransaction, error) {
+func (w *Wallet) Transactions() ([]*WalletTransaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
@@ -516,8 +516,8 @@ func (w *Wallet) PrivateKeys() (map[WalletPrivateKey]Address, error) {
 	return w.keychain.PrivateKeys()
 }
 
-func (w *Wallet) PrunePrivateKeys(passphrase string) error {
-	return w.keychain.Prune(passphrase)
+func (w *Wallet) PrunePrivateKeys() error {
+	return w.keychain.Prune()
 }
 
 func (w *Wallet) NetworkKey() (lcrypto.PrivKey, error) {
