@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	badger "github.com/ipfs/go-ds-badger"
@@ -148,14 +149,20 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 func (w *Wallet) Start() {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
+	log.Info("Wallet started. Syncing blocks to tip...")
 
 	for {
-		blk, err := w.getBlocksFunc(w.chainHeight + 1)
+		height := w.chainHeight + 1
+		blk, err := w.getBlocksFunc(height)
 		if err != nil {
 			break
 		}
 		w.connectBlock(blk, w.scanner, w.accdb, false)
+		if height%10000 == 0 {
+			log.Debugf("Wallet synced to height %d", height)
+		}
 	}
+	log.Info("Wallet sync complete.")
 }
 
 func (w *Wallet) ConnectBlock(blk *blocks.Block) {
@@ -183,6 +190,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 	}
 
 	getHeight := height + 1
+	log.Debugf("Wallet rescan started at height: %d", getHeight)
 	for {
 		blk, err := w.getBlocksFunc(getHeight)
 		if err != nil {
@@ -191,6 +199,9 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 
 		w.mtx.Lock()
 		w.connectBlock(blk, scanner, accdb, true)
+		if getHeight%10000 == 0 {
+			log.Debugf("Wallet rescanned to height %d", getHeight)
+		}
 
 		if getHeight == w.chainHeight {
 			if err := w.accdb.Commit(accdb.Accumulator(), w.chainHeight, blockchain.FlushRequired); err != nil {
@@ -198,6 +209,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 			}
 			atomic.SwapUint32(&w.rescan, 0)
 			w.mtx.Unlock()
+			log.Debugf("Wallet rescan complete")
 			return nil
 		}
 		getHeight++
@@ -211,6 +223,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 	matches := scanner.ScanOutputs(blk)
 	accumulator := accdb.Accumulator()
 
+	matchedTxs := 0
 	for _, tx := range blk.Transactions {
 		var (
 			isOurs    bool
@@ -221,25 +234,26 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			if commitment, ok := w.nullifiers[n]; ok {
 				b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
 				if err != nil {
-					// TODO: log err
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				var note pb.SpendNote
 				if err := proto.Unmarshal(b, &note); err != nil {
-					// TODO: log err
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				walletOut += types.Amount(note.Amount)
 				if err := w.ds.Delete(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String())); err != nil {
-					// TODO: log err
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				if err := w.ds.Delete(context.Background(), datastore.NewKey(NullifierKeyPrefix+n.String())); err != nil {
-					// TODO: log err
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				delete(w.nullifiers, n)
 				isOurs = true
+				log.Debugf("Wallet detected spend of nullifier %s in block %d", n.String(), blk.Header.Height)
 			}
 		}
 		for _, out := range tx.Outputs() {
@@ -250,25 +264,25 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 
 				addrInfo, err := w.keychain.addrInfo(match.Key)
 				if err != nil {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 
 				note := types.SpendNote{}
 				if err := note.Deserialize(match.DecryptedNote); err != nil {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				if !bytes.Equal(hash.HashFunc(match.DecryptedNote), out.Commitment) {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				if note.AssetID.Compare(types.IlliumCoinID) != 0 {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				if note.Amount == 0 {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 
@@ -290,25 +304,26 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 				ser, err := proto.Marshal(dbNote)
 				if err != nil {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment)), ser); err != nil {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				nullifier, err := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
 				if err != nil {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NullifierKeyPrefix+nullifier.String()), out.Commitment); err != nil {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 					continue
 				}
 				w.nullifiers[nullifier] = types.NewID(out.Commitment)
 				walletIn += note.Amount
 				isOurs = true
+				log.Debugf("Wallet detected incoming output %s. Txid: %s in block %d", types.NewID(out.Commitment), tx.ID(), blk.Header.Height)
 			} else {
 				accumulator.Insert(out.Commitment, false)
 			}
@@ -320,25 +335,26 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if ok {
 					b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
 					if err != nil {
-						// TODO: log err
+						log.Errorf("Wallet connect block error:, %s", err)
 						continue
 					}
 					var note pb.SpendNote
 					if err := proto.Unmarshal(b, &note); err != nil {
-						// TODO: log err
+						log.Errorf("Wallet connect block error:, %s", err)
 						continue
 					}
 					note.Staked = true
 
 					ser, err := proto.Marshal(&note)
 					if err != nil {
-						// TODO: log err
+						log.Errorf("Wallet connect block error:, %s", err)
 						continue
 					}
 					if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()), ser); err != nil {
-						// TODO: log err
+						log.Errorf("Wallet connect block error:, %s", err)
 						continue
 					}
+					log.Debugf("Wallet detected stake tx. Txid: %s in block %d", tx.ID(), blk.Header.Height)
 				}
 			}
 		}
@@ -348,13 +364,14 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			flushMode = blockchain.FlushRequired
 		}
 		if err := accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
-			// TODO: log error
+			log.Errorf("Wallet connect block error:, %s", err)
 		}
 		if !isRescan {
 			w.chainHeight = blk.Header.Height
 		}
 
 		if isOurs {
+			matchedTxs++
 			txid := tx.ID()
 			wtx := &pb.WalletTransaction{
 				Txid:   txid[:],
@@ -363,11 +380,11 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			}
 			ser, err := proto.Marshal(wtx)
 			if err != nil {
-				// TODO: log error
+				log.Errorf("Wallet connect block error:, %s", err)
 				continue
 			}
 			if err := w.ds.Put(context.Background(), datastore.NewKey(TransactionDatastoreKeyPrefix+tx.ID().String()), ser); err != nil {
-				// TODO: log error
+				log.Errorf("Wallet connect block error:, %s", err)
 				continue
 			}
 
@@ -375,11 +392,19 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				heightBytes := make([]byte, 32)
 				binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
 				if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
-					// TODO: log error
+					log.Errorf("Wallet connect block error:, %s", err)
 				}
 			}
+			direction := "incoming"
+			amtStr := fmt.Sprintf("+%d", walletIn-walletOut)
+			if walletOut > walletIn {
+				direction = "outgoing"
+				amtStr = fmt.Sprintf("-%d", walletOut-walletIn)
+			}
+			log.Infof("New %s wallet transaction. Txid: %s, Coins: %s", direction, tx.ID(), amtStr)
 		}
 	}
+	log.Debugf("Wallet processed block at height %d. Matched txs: %d", blk.Header.Height, matchedTxs)
 }
 
 func (w *Wallet) MnemonicSeed() (string, error) {
@@ -552,8 +577,8 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 	}
 	if rescan {
 		go func() {
-			if err := w.rescanWallet(rescanHeight, curveKey); err != nil {
-				// TODO: log error
+			if err := w.rescanWallet(rescanHeight-1, curveKey); err != nil {
+				log.Errorf("rescan wallet error: %s", err)
 			}
 		}()
 	}
@@ -578,7 +603,7 @@ func (w *Wallet) Close() {
 	heightBytes := make([]byte, 32)
 	binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
 	if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
-		// TODO: log error
+		log.Errorf("wallet close error: %s", err)
 	}
 
 	w.accdb.Flush(blockchain.FlushRequired, w.chainHeight)
