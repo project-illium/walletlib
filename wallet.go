@@ -26,7 +26,6 @@ import (
 	"github.com/project-illium/ilxd/types/transactions"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"strings"
 	"sync"
@@ -134,7 +133,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 	if cfg.logger != nil {
 		log = cfg.logger
 	} else {
-		log = zap.S()
+		//log = zap.S()
 	}
 
 	return &Wallet{
