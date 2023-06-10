@@ -506,7 +506,7 @@ func (w *Wallet) ChangeWalletPassphrase(currentPassphrase, newPassphrase string)
 func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount) (types.ID, error) {
 	tx, err := w.buildAndProveTransaction(toAddr, amount, feePerKB)
 	if err != nil {
-		return types.ID{}, nil
+		return types.ID{}, err
 	}
 	if err := w.broadcastFunc(tx); err != nil {
 		return types.ID{}, nil

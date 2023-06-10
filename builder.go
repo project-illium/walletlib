@@ -23,9 +23,11 @@ type RawTransaction struct {
 	PrivateOutputs []standard.PrivateOutput
 }
 
-type RawInput interface {
-	Commitment() []byte
-	PrivateInput() standard.PrivateInput
+// RawInput represents either a commitment or a private input
+// Set one or the other fields but not both.
+type RawInput struct {
+	Commitment   []byte
+	PrivateInput *standard.PrivateInput
 }
 type RawOutput struct {
 	Addr   Address

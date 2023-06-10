@@ -20,6 +20,31 @@ import (
 	"time"
 )
 
+func mockAddress() (Address, types.UnlockingScript, lcrypto.PrivKey, error) {
+	viewPriv, viewPub, err := crypto.GenerateCurve25519Key(rand.Reader)
+	if err != nil {
+		return nil, types.UnlockingScript{}, nil, nil
+	}
+	_, spendKey, err := lcrypto.GenerateEd25519Key(rand.Reader)
+	if err != nil {
+		return nil, types.UnlockingScript{}, nil, nil
+	}
+	rawSpend, err := spendKey.Raw()
+	if err != nil {
+		return nil, types.UnlockingScript{}, nil, nil
+	}
+	unlockingScript := types.UnlockingScript{
+		ScriptCommitment: mockBasicUnlockScriptCommitment,
+		ScriptParams:     [][]byte{rawSpend},
+	}
+
+	addr, err := NewBasicAddress(unlockingScript, viewPub, &params.RegestParams)
+	if err != nil {
+		return nil, types.UnlockingScript{}, nil, nil
+	}
+	return addr, unlockingScript, viewPriv, nil
+}
+
 func TestWallet(t *testing.T) {
 	ds := mock.NewMapDatastore()
 
@@ -31,9 +56,6 @@ func TestWallet(t *testing.T) {
 			return nil, 0, blockchain.ErrNoCheckpoint
 		}),
 		BroadcastFunction(func(tx *transactions.Transaction) error { return nil }),
-		ProofsSourceFunction(func(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error) {
-			return nil, types.ID{}, nil
-		}),
 		Params(&params.RegestParams),
 	}...)
 	assert.NoError(t, err)
@@ -41,21 +63,8 @@ func TestWallet(t *testing.T) {
 	addr, err := w.Address()
 	assert.NoError(t, err)
 
-	scriptHash := addr.ScriptHash()
-	var salt [32]byte
-	rand.Read(salt[:])
-
-	note := &types.SpendNote{
-		ScriptHash: scriptHash[:],
-		Amount:     1000000,
-		AssetID:    types.IlliumCoinID,
-		State:      [128]byte{},
-		Salt:       salt,
-	}
-	ser := note.Serialize()
-	commitment, err := note.Commitment()
-	assert.NoError(t, err)
-	ciphertext, err := addr.ViewKey().(*crypto.Curve25519PublicKey).Encrypt(ser)
+	toAmount := types.Amount(1000000)
+	output, _, err := buildOutput(addr, toAmount)
 	assert.NoError(t, err)
 
 	// Receive
@@ -63,12 +72,7 @@ func TestWallet(t *testing.T) {
 		Header: &blocks.BlockHeader{Height: 1},
 		Transactions: []*transactions.Transaction{
 			transactions.WrapTransaction(&transactions.StandardTransaction{
-				Outputs: []*transactions.Output{
-					{
-						Commitment: commitment[:],
-						Ciphertext: ciphertext,
-					},
-				},
+				Outputs: []*transactions.Output{output},
 			}),
 		},
 	}
@@ -79,8 +83,10 @@ func TestWallet(t *testing.T) {
 	assert.Len(t, notes, 1)
 	balance, err := w.Balance()
 	assert.NoError(t, err)
-	assert.Equal(t, note.Amount, balance)
+	assert.Equal(t, toAmount, balance)
 
+	var salt [32]byte
+	copy(salt[:], notes[0].Salt)
 	nullifier, err := types.CalculateNullifier(notes[0].AccIndex, salt, notes[0].UnlockingScript.ScriptCommitment, notes[0].UnlockingScript.ScriptParams...)
 	assert.NoError(t, err)
 
@@ -111,35 +117,11 @@ func TestWallet(t *testing.T) {
 	assert.Equal(t, uint32(2), w.chainHeight)
 
 	// Test import
-	viewPriv, viewPub, err := crypto.GenerateCurve25519Key(rand.Reader)
-	assert.NoError(t, err)
-	_, spendKey, err := lcrypto.GenerateEd25519Key(rand.Reader)
-	assert.NoError(t, err)
-	rawSpend, err := spendKey.Raw()
-	assert.NoError(t, err)
-	unlockingScript := types.UnlockingScript{
-		ScriptCommitment: mockBasicUnlockScriptCommitment,
-		ScriptParams:     [][]byte{rawSpend},
-	}
-
-	addr, err = NewBasicAddress(unlockingScript, viewPub, &params.RegestParams)
+	addr, unlockingScript, viewPriv, err := mockAddress()
 	assert.NoError(t, err)
 
-	scriptHash = addr.ScriptHash()
-	var salt2 [32]byte
-	rand.Read(salt[:])
-
-	note = &types.SpendNote{
-		ScriptHash: scriptHash[:],
-		Amount:     1000000,
-		AssetID:    types.IlliumCoinID,
-		State:      [128]byte{},
-		Salt:       salt2,
-	}
-	ser = note.Serialize()
-	commitment, err = note.Commitment()
-	assert.NoError(t, err)
-	ciphertext, err = viewPub.(*crypto.Curve25519PublicKey).Encrypt(ser)
+	toAmount = types.Amount(1000000)
+	output, _, err = buildOutput(addr, toAmount)
 	assert.NoError(t, err)
 
 	// Receive to unknown addr
@@ -147,12 +129,7 @@ func TestWallet(t *testing.T) {
 		Header: &blocks.BlockHeader{Height: 3},
 		Transactions: []*transactions.Transaction{
 			transactions.WrapTransaction(&transactions.StandardTransaction{
-				Outputs: []*transactions.Output{
-					{
-						Commitment: commitment[:],
-						Ciphertext: ciphertext,
-					},
-				},
+				Outputs: []*transactions.Output{output},
 			}),
 		},
 	}
@@ -169,6 +146,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, txs, 2)
 
+	// Import and rescan
 	w.getBlocksFunc = func(height uint32) (*blocks.Block, error) {
 		if height == 1 {
 			return blk1, nil
@@ -186,9 +164,68 @@ func TestWallet(t *testing.T) {
 	assert.Len(t, notes, 1)
 	balance, err = w.Balance()
 	assert.NoError(t, err)
-	assert.Equal(t, note.Amount, balance)
+	assert.Equal(t, toAmount, balance)
 
 	txs, err = w.GetTransactions()
 	assert.NoError(t, err)
 	assert.Len(t, txs, 3)
+}
+
+func TestTransactions(t *testing.T) {
+	ds := mock.NewMapDatastore()
+
+	w, err := NewWallet([]Option{
+		Datastore(ds),
+		DataDir(repo.DefaultHomeDir),
+		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
+		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
+			return nil, 0, blockchain.ErrNoCheckpoint
+		}),
+		BroadcastFunction(func(tx *transactions.Transaction) error { return nil }),
+		Params(&params.RegestParams),
+	}...)
+	assert.NoError(t, err)
+
+	addr, err := w.Address()
+	assert.NoError(t, err)
+
+	toAmount := types.Amount(1000000)
+	output, _, err := buildOutput(addr, toAmount)
+	assert.NoError(t, err)
+
+	// Receive
+	blk1 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 1},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk1)
+
+	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
+
+	// Spend the received coins
+	amt := types.Amount(500000)
+	_, err = w.Spend(addr, amt, 10)
+	assert.NoError(t, err)
+
+	// Create raw tx
+	notes, err := w.Notes()
+	assert.NoError(t, err)
+
+	rawtx, err := w.CreateRawTransaction([]*RawInput{{Commitment: notes[0].Commitment}}, []*RawOutput{{Addr: addr, Amount: amt}}, true, 10)
+	assert.NoError(t, err)
+
+	// Prove raw tx
+	spendKey, err := w.keychain.spendKey(notes[0].KeyIndex)
+	assert.NoError(t, err)
+	_, err = ProveRawTransaction(rawtx, []lcrypto.PrivKey{spendKey})
+	assert.NoError(t, err)
+
+	// Stake
+	err = w.Stake([]types.ID{types.NewID(notes[0].Commitment)})
+	assert.NoError(t, err)
 }

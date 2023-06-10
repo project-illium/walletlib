@@ -53,6 +53,10 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 				continue
 			}
 
+			if note.Staked {
+				continue
+			}
+
 			if IsDustInput(types.Amount(note.Amount), feePerKB) {
 				continue
 			}
@@ -96,7 +100,7 @@ inputLoop:
 	}
 
 	// Create the transaction zk proof
-	privateParams := standard.PrivateParams{
+	privateParams := &standard.PrivateParams{
 		Inputs:  rawTx.PrivateInputs,
 		Outputs: rawTx.PrivateOutputs,
 	}
@@ -104,7 +108,7 @@ inputLoop:
 	if err != nil {
 		return nil, err
 	}
-	publicParams := standard.PublicParams{
+	publicParams := &standard.PublicParams{
 		TXORoot:    rawTx.Tx.TxoRoot,
 		SigHash:    sighash,
 		Nullifiers: rawTx.Tx.Nullifiers,
@@ -128,7 +132,7 @@ inputLoop:
 	return transactions.WrapTransaction(rawTx.Tx), nil
 }
 
-func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, addChangeOutput bool, feePerKB types.Amount) (*RawTransaction, error) {
+func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, addChangeOutput bool, feePerKB types.Amount) (*RawTransaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
@@ -157,6 +161,10 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 					continue
 				}
 
+				if note.Staked {
+					continue
+				}
+
 				if IsDustInput(types.Amount(note.Amount), feePerKB) {
 					continue
 				}
@@ -174,8 +182,8 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 			notes := make([]*pb.SpendNote, 0, 1)
 			total := types.Amount(0)
 			for _, in := range inputs {
-				if commitment := in.Commitment(); commitment != nil {
-					result, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(commitment)))
+				if in.Commitment != nil {
+					result, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(in.Commitment)))
 					if err != nil {
 						return 0, nil, err
 					}
@@ -193,25 +201,24 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 					if total > amount {
 						return total, notes, nil
 					}
-				} else {
-					privIn := in.PrivateInput()
+				} else if in.PrivateInput != nil {
 
 					us := types.UnlockingScript{
-						ScriptCommitment: privIn.ScriptCommitment,
-						ScriptParams:     privIn.ScriptParams,
+						ScriptCommitment: in.PrivateInput.ScriptCommitment,
+						ScriptParams:     in.PrivateInput.ScriptParams,
 					}
 					scriptHash := us.Hash()
 
-					if len(privIn.ScriptParams) < 1 {
+					if len(in.PrivateInput.ScriptParams) < 1 {
 						return 0, nil, errors.New("public key not found in private script params")
 					}
 
 					sn := &types.SpendNote{
 						ScriptHash: scriptHash[:],
-						Amount:     types.Amount(privIn.Amount),
-						AssetID:    privIn.AssetID,
-						State:      privIn.State,
-						Salt:       privIn.Salt,
+						Amount:     types.Amount(in.PrivateInput.Amount),
+						AssetID:    in.PrivateInput.AssetID,
+						State:      in.PrivateInput.State,
+						Salt:       in.PrivateInput.Salt,
 					}
 					commitment, err := sn.Commitment()
 					if err != nil {
@@ -221,15 +228,15 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 					note := &pb.SpendNote{
 						Commitment: commitment[:],
 						ScriptHash: scriptHash[:],
-						Amount:     privIn.Amount,
-						Asset_ID:   privIn.AssetID[:],
-						State:      privIn.State[:],
-						Salt:       privIn.Salt[:],
+						Amount:     in.PrivateInput.Amount,
+						Asset_ID:   in.PrivateInput.AssetID[:],
+						State:      in.PrivateInput.State[:],
+						Salt:       in.PrivateInput.Salt[:],
 						UnlockingScript: &pb.UnlockingScript{
-							ScriptCommitment: privIn.ScriptCommitment,
-							ScriptParams:     privIn.ScriptParams,
+							ScriptCommitment: in.PrivateInput.ScriptCommitment,
+							ScriptParams:     in.PrivateInput.ScriptParams,
 						},
-						AccIndex: privIn.CommitmentIndex,
+						AccIndex: in.PrivateInput.CommitmentIndex,
 					}
 					if IsDustInput(types.Amount(note.Amount), feePerKB) {
 						continue
@@ -239,6 +246,8 @@ func (w *Wallet) CreateRawTransaction(inputs []RawInput, outputs []*RawOutput, a
 					if total > amount {
 						return total, notes, nil
 					}
+				} else {
+					return total, notes, errors.New("commitment or private key not set")
 				}
 			}
 			return total, notes, nil
@@ -273,7 +282,7 @@ func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transac
 	}
 
 	// Create the transaction zk proof
-	privateParams := standard.PrivateParams{
+	privateParams := &standard.PrivateParams{
 		Inputs:  rawTx.PrivateInputs,
 		Outputs: rawTx.PrivateOutputs,
 	}
@@ -281,7 +290,7 @@ func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transac
 	if err != nil {
 		return nil, err
 	}
-	publicParams := standard.PublicParams{
+	publicParams := &standard.PublicParams{
 		TXORoot:    rawTx.Tx.TxoRoot,
 		SigHash:    sighash,
 		Nullifiers: rawTx.Tx.Nullifiers,
@@ -368,7 +377,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	tx.Signature = sig
 
 	// Create the transaction zk proof
-	privateParams := stake.PrivateParams{
+	privateParams := &stake.PrivateParams{
 		AssetID:          privateInput.AssetID,
 		Salt:             privateInput.Salt,
 		State:            privateInput.State,
@@ -379,7 +388,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 		UnlockingParams:  privateInput.UnlockingParams,
 	}
 
-	publicParams := stake.PublicParams{
+	publicParams := &stake.PublicParams{
 		TXORoot:   txoRoot[:],
 		SigHash:   sigHash,
 		Amount:    note.Amount,
@@ -439,12 +448,12 @@ func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, networkKe
 	tx.Signature = sig
 
 	// Create the transaction zk proof
-	privateParams := standard.PrivateParams{
+	privateParams := &standard.PrivateParams{
 		Outputs: []standard.PrivateOutput{privOut},
 	}
 
-	publicParams := standard.PublicParams{
-		Coinbase:   uint64(unclaimedCoins),
+	publicParams := &standard.PublicParams{
+		Coinbase: uint64(unclaimedCoins),
 	}
 
 	for _, out := range tx.Outputs {
