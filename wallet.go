@@ -593,7 +593,7 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 	return nil
 }
 
-func (w *Wallet) getProofs(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error) {
+func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error) {
 	acc := w.accdb.Accumulator()
 
 	proofs := make([]*blockchain.InclusionProof, 0, len(commitments))

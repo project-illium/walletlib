@@ -71,7 +71,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 	}
 
 	// Build tx
-	rawTx, err := BuildTransaction([]*RawOutput{{toAddr, amount}}, inputSource, w.keychain.Address, w.getProofs, feePerKB)
+	rawTx, err := BuildTransaction([]*RawOutput{{toAddr, amount}}, inputSource, w.keychain.Address, w.GetInclusionProofs, feePerKB)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +259,7 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 		changeSource = w.Address
 	}
 
-	return BuildTransaction(outputs, inputSource, changeSource, w.getProofs, feePerKB)
+	return BuildTransaction(outputs, inputSource, changeSource, w.GetInclusionProofs, feePerKB)
 }
 
 func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transactions.Transaction, error) {
@@ -343,7 +343,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	var salt [32]byte
 	copy(salt[:], note.Salt)
 
-	proofs, txoRoot, err := w.getProofs(commitment)
+	proofs, txoRoot, err := w.GetInclusionProofs(commitment)
 	if err != nil {
 		return nil, err
 	}
