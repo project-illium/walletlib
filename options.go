@@ -9,6 +9,7 @@ import (
 	"github.com/project-illium/ilxd/params"
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
+	"go.uber.org/zap"
 )
 
 // Option is configuration option function for the blockchain
@@ -93,6 +94,14 @@ func GetAccumulatorCheckpointFunction(getAccFunc GetAccumulatorCheckpointFunc) O
 	}
 }
 
+// Logger sets a logger for the wallet if desired.
+func Logger(logger *zap.SugaredLogger) Option {
+	return func(cfg *config) error {
+		cfg.logger = logger
+		return nil
+	}
+}
+
 type config struct {
 	datastore     repo.Datastore
 	params        *params.NetworkParams
@@ -100,6 +109,7 @@ type config struct {
 	broadcastFunc BroadcastFunc
 	getBlockFunc  GetBlockFunc
 	getAccFunc    GetAccumulatorCheckpointFunc
+	logger        *zap.SugaredLogger
 	dataDir       string
 	mnemonic      string
 }
