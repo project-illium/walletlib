@@ -487,6 +487,10 @@ func (w *Wallet) PrunePrivateKeys(passphrase string) error {
 	return w.keychain.Prune(passphrase)
 }
 
+func (w *Wallet) NetworkKey() (lcrypto.PrivKey, error) {
+	return w.keychain.NetworkKey()
+}
+
 func (w *Wallet) Lock() error {
 	return w.keychain.Lock()
 }
