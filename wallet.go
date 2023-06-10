@@ -149,6 +149,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 func (w *Wallet) Start() {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
+
 	log.Info("Wallet started. Syncing blocks to tip...")
 
 	for {
