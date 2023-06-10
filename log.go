@@ -8,7 +8,6 @@ import "go.uber.org/zap"
 
 var log = zap.S()
 
-func UpdateLogger(logger *zap.Logger) {
-	zap.ReplaceGlobals(logger)
+func UpdateLogger() {
 	log = zap.S()
 }
