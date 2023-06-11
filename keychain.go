@@ -154,7 +154,6 @@ func (kc *Keychain) Addresses() ([]Address, error) {
 
 	results, err := kc.ds.Query(context.Background(), query.Query{
 		Prefix: AddressDatastoreKeyPrefix,
-		Orders: []query.Order{query.OrderByKeyDescending{}},
 	})
 	if err != nil {
 		return nil, err
