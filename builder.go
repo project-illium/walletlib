@@ -137,7 +137,7 @@ func selectInputs(amount types.Amount, fetchInputs InputSource, feePerKB types.A
 func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nullifier, standard.PrivateInput, error) {
 	privIn := standard.PrivateInput{
 		Amount:          note.Amount,
-		CommitmentIndex: 0,
+		CommitmentIndex: proof.Index,
 		InclusionProof: standard.InclusionProof{
 			Hashes:      proof.Hashes,
 			Flags:       proof.Flags,
@@ -150,7 +150,7 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 	copy(privIn.AssetID[:], note.Asset_ID)
 	copy(privIn.State[:], note.State)
 
-	nullifier, err := types.CalculateNullifier(note.AccIndex, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
+	nullifier, err := types.CalculateNullifier(proof.Index, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
 	if err != nil {
 		return types.Nullifier{}, standard.PrivateInput{}, err
 	}
