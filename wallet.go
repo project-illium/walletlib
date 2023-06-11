@@ -159,6 +159,15 @@ func (w *Wallet) Start() {
 
 	log.Info("Wallet started. Syncing blocks to tip...")
 
+	if w.chainHeight == 0 {
+		blk, err := w.getBlocksFunc(0)
+		if err != nil {
+			log.Errorf("Wallet error getting genesis block: %s", err)
+		} else {
+			w.connectBlock(blk, w.scanner, w.accdb, false)
+		}
+	}
+
 	for {
 		height := w.chainHeight + 1
 		blk, err := w.getBlocksFunc(height)
