@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto/pb"
 	crypto2 "github.com/project-illium/ilxd/crypto"
 	icrypto "github.com/project-illium/ilxd/crypto"
+	"golang.org/x/crypto/ed25519"
 )
 
 const WalletKeyPrefix = "priv"
@@ -64,12 +65,13 @@ func (k *WalletPrivateKey) GetPublic() crypto.PubKey {
 }
 
 func (k *WalletPrivateKey) SpendKey() crypto.PrivKey {
-	sk, _ := crypto.UnmarshalEd25519PrivateKey(k.spendKey[:])
+	ek := ed25519.NewKeyFromSeed(k.spendKey[:])
+	sk, _ := crypto.UnmarshalEd25519PrivateKey(ek)
 	return sk
 }
 
 func (k *WalletPrivateKey) ViewKey() crypto.PrivKey {
-	sk, _ := icrypto.UnmarshalCurve25519PrivateKey(k.spendKey[:])
+	sk, _ := icrypto.UnmarshalCurve25519PrivateKey(k.viewKey[:])
 	return sk
 }
 
