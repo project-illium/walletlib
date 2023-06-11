@@ -26,18 +26,18 @@ func IsDustInput(amount, feePerKB types.Amount) bool {
 // ComputeFee returns the fee for the estimated size of the transaction.
 func ComputeFee(inputs, outputs int, feePerKB types.Amount) types.Amount {
 	size := EstimateSerializedSize(inputs, outputs, true)
-	sizeInKB := float64(size / 1000)
+	sizeInKB := float64(size) / 1000
 	return types.Amount(float64(feePerKB) * sizeInKB)
 }
 
 // EstimateSerializedSize returns the estimated size of the transaction.
 func EstimateSerializedSize(inputs, outputs int, addChangeOutput bool) types.Amount {
 	// Estimated base protobuf size:
-	// base +2
+	// base +40 (a buffer to make sure we don't under-estimate)
 	// output +1
 	// nullifier +2
 	// fee +2
-	baseSize := 2 + 1 + 2 + 2
+	baseSize := 40 + 1 + 2 + 2
 	txoRootSize := hash.HashSize + 4
 	nullifierSize := types.NullifierSize + 2
 	outputSize := types.CommitmentLen + blockchain.CiphertextLen + 8

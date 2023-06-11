@@ -614,7 +614,7 @@ func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.Incl
 	for _, commitment := range commitments {
 		proof, err := acc.GetProof(commitment[:])
 		if err != nil {
-			return nil, types.ID{}, err
+			return nil, types.ID{}, fmt.Errorf("err fetching inclusion proof: %s", err)
 		}
 		proofs = append(proofs, proof)
 	}

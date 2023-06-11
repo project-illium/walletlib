@@ -216,7 +216,7 @@ func TestTransactions(t *testing.T) {
 	notes, err := w.Notes()
 	assert.NoError(t, err)
 
-	rawtx, err := w.CreateRawTransaction([]*RawInput{{Commitment: notes[0].Commitment}}, []*RawOutput{{Addr: addr, Amount: amt}}, true, 10)
+	rawtx, err := w.CreateRawTransaction([]*RawInput{{Commitment: notes[0].Commitment}}, []*RawOutput{{Addr: addr, Amount: amt}}, true, 0)
 	assert.NoError(t, err)
 
 	// Prove raw tx

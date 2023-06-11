@@ -56,6 +56,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 	if err != nil {
 		return nil, err
 	}
+	raw.Tx.Fee = uint64(fee)
 
 	// In this iteration extract the commitments and sum the total input amount
 	totalIn := types.Amount(0)
