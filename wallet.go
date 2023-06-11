@@ -118,10 +118,15 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 
 	adb := blockchain.NewAccumulatorDB(ds)
 
-	var height uint32
+	var (
+		height    uint32
+		newWallet bool
+	)
 	heightBytes, err := ds.Get(context.Background(), datastore.NewKey(WalletHeightDatastoreKey))
 	if err != nil && !errors.Is(err, datastore.ErrNotFound) {
 		return nil, err
+	} else if errors.Is(err, datastore.ErrNotFound) {
+		newWallet = true
 	} else if err == nil {
 		height = binary.BigEndian.Uint32(heightBytes)
 	}
@@ -137,7 +142,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		log = zap.S()
 	}
 
-	return &Wallet{
+	w := &Wallet{
 		ds:            ds,
 		params:        cfg.params,
 		keychain:      keychain,
@@ -150,7 +155,17 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainHeight:   height,
 		scanner:       NewTransactionScanner(viewKeys...),
 		mtx:           sync.RWMutex{},
-	}, nil
+	}
+
+	if newWallet {
+		genesis, err := w.getBlocksFunc(0)
+		if err != nil {
+			return nil, err
+		}
+		w.connectBlock(genesis, w.scanner, w.accdb, false)
+	}
+
+	return w, nil
 }
 
 func (w *Wallet) Start() {
@@ -158,15 +173,6 @@ func (w *Wallet) Start() {
 	defer w.mtx.Unlock()
 
 	log.Info("Wallet started. Syncing blocks to tip...")
-
-	if w.chainHeight == 0 {
-		blk, err := w.getBlocksFunc(0)
-		if err != nil {
-			log.Errorf("Wallet error getting genesis block: %s", err)
-		} else {
-			w.connectBlock(blk, w.scanner, w.accdb, false)
-		}
-	}
 
 	for {
 		height := w.chainHeight + 1

@@ -25,7 +25,7 @@ func TestBasicAddress(t *testing.T) {
 	assert.NoError(t, err)
 
 	us := types.UnlockingScript{
-		ScriptCommitment: mockBasicUnlockScriptCommitment,
+		ScriptCommitment: MockBasicUnlockScriptCommitment,
 		ScriptParams:     [][]byte{pubKeyRaw},
 	}
 

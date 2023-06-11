@@ -36,7 +36,7 @@ var (
 	ErrPublicOnlyKeychain    = errors.New("keychain public only")
 	ErrPermissionDenied      = errors.New("permission denied")
 
-	mockBasicUnlockScriptCommitment = bytes.Repeat([]byte{0xff}, 32)
+	MockBasicUnlockScriptCommitment = bytes.Repeat([]byte{0xff}, 32)
 )
 
 const (
@@ -436,7 +436,7 @@ func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Addres
 	}
 
 	script := types.UnlockingScript{
-		ScriptCommitment: mockBasicUnlockScriptCommitment,
+		ScriptCommitment: MockBasicUnlockScriptCommitment,
 		ScriptParams:     [][]byte{rawPublic},
 	}
 

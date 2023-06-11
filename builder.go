@@ -143,7 +143,7 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 			Flags:       proof.Flags,
 			Accumulator: proof.Accumulator,
 		},
-		ScriptCommitment: mockBasicUnlockScriptCommitment,
+		ScriptCommitment: MockBasicUnlockScriptCommitment,
 		ScriptParams:     note.UnlockingScript.ScriptParams,
 	}
 	copy(privIn.Salt[:], note.Salt)

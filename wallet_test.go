@@ -34,7 +34,7 @@ func mockAddress() (Address, types.UnlockingScript, lcrypto.PrivKey, error) {
 		return nil, types.UnlockingScript{}, nil, nil
 	}
 	unlockingScript := types.UnlockingScript{
-		ScriptCommitment: mockBasicUnlockScriptCommitment,
+		ScriptCommitment: MockBasicUnlockScriptCommitment,
 		ScriptParams:     [][]byte{rawSpend},
 	}
 
