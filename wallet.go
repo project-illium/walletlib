@@ -351,34 +351,33 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				accumulator.Insert(out.Commitment, false)
 			}
 		}
-		for _, tx := range blk.Transactions {
-			stakeTx := tx.GetStakeTransaction()
-			if stakeTx != nil {
-				commitment, ok := w.nullifiers[types.NewNullifier(stakeTx.Nullifier)]
-				if ok {
-					b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
-					if err != nil {
-						log.Errorf("Wallet connect block error:, %s", err)
-						continue
-					}
-					var note pb.SpendNote
-					if err := proto.Unmarshal(b, &note); err != nil {
-						log.Errorf("Wallet connect block error:, %s", err)
-						continue
-					}
-					note.Staked = true
 
-					ser, err := proto.Marshal(&note)
-					if err != nil {
-						log.Errorf("Wallet connect block error:, %s", err)
-						continue
-					}
-					if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()), ser); err != nil {
-						log.Errorf("Wallet connect block error:, %s", err)
-						continue
-					}
-					log.Debugf("Wallet detected stake tx. Txid: %s in block %d", tx.ID(), blk.Header.Height)
+		stakeTx := tx.GetStakeTransaction()
+		if stakeTx != nil {
+			commitment, ok := w.nullifiers[types.NewNullifier(stakeTx.Nullifier)]
+			if ok {
+				b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
+				if err != nil {
+					log.Errorf("Wallet connect block error:, %s", err)
+					continue
 				}
+				var note pb.SpendNote
+				if err := proto.Unmarshal(b, &note); err != nil {
+					log.Errorf("Wallet connect block error:, %s", err)
+					continue
+				}
+				note.Staked = true
+
+				ser, err := proto.Marshal(&note)
+				if err != nil {
+					log.Errorf("Wallet connect block error:, %s", err)
+					continue
+				}
+				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()), ser); err != nil {
+					log.Errorf("Wallet connect block error:, %s", err)
+					continue
+				}
+				log.Debugf("Wallet detected stake tx. Txid: %s in block %d", tx.ID(), blk.Header.Height)
 			}
 		}
 
