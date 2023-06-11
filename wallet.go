@@ -560,7 +560,7 @@ func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amoun
 		return types.ID{}, err
 	}
 	if err := w.broadcastFunc(tx); err != nil {
-		return types.ID{}, nil
+		return types.ID{}, err
 	}
 	return tx.ID(), nil
 }
