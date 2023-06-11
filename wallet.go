@@ -49,6 +49,7 @@ type Wallet struct {
 	getAccFunc    GetAccumulatorCheckpointFunc
 	chainHeight   uint32
 	rescan        uint32
+	newWallet     bool
 
 	mtx sync.RWMutex
 }
@@ -142,7 +143,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		log = zap.S()
 	}
 
-	w := &Wallet{
+	return &Wallet{
 		ds:            ds,
 		params:        cfg.params,
 		keychain:      keychain,
@@ -154,18 +155,9 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		accdb:         adb,
 		chainHeight:   height,
 		scanner:       NewTransactionScanner(viewKeys...),
+		newWallet:     newWallet,
 		mtx:           sync.RWMutex{},
-	}
-
-	if newWallet {
-		genesis, err := w.getBlocksFunc(0)
-		if err != nil {
-			return nil, err
-		}
-		w.connectBlock(genesis, w.scanner, w.accdb, false)
-	}
-
-	return w, nil
+	}, nil
 }
 
 func (w *Wallet) Start() {
@@ -173,6 +165,14 @@ func (w *Wallet) Start() {
 	defer w.mtx.Unlock()
 
 	log.Info("Wallet started. Syncing blocks to tip...")
+
+	if w.newWallet {
+		genesis, err := w.getBlocksFunc(0)
+		if err != nil {
+			log.Errorf("Wallet error fetching genesis block: %s", err)
+		}
+		w.connectBlock(genesis, w.scanner, w.accdb, false)
+	}
 
 	for {
 		height := w.chainHeight + 1
