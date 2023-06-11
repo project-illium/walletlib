@@ -669,7 +669,6 @@ func (kc *Keychain) getViewKeys() ([]*icrypto.Curve25519PrivateKey, error) {
 	viewKeys := make([]*icrypto.Curve25519PrivateKey, 0, 1)
 	results, err := kc.ds.Query(context.Background(), query.Query{
 		Prefix: AddressDatastoreKeyPrefix,
-		Orders: []query.Order{query.OrderByKeyDescending{}},
 	})
 	if err != nil {
 		return nil, err
