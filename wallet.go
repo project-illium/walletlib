@@ -117,8 +117,6 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		fpkb = cfg.feePerKB
 	}
 
-	adb := blockchain.NewAccumulatorDB(ds)
-
 	var (
 		height    uint32
 		newWallet bool
@@ -130,6 +128,13 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		newWallet = true
 	} else if err == nil {
 		height = binary.BigEndian.Uint32(heightBytes)
+	}
+
+	adb := blockchain.NewAccumulatorDB(ds)
+	if !newWallet {
+		if err := adb.Init(nil); err != nil {
+			return nil, err
+		}
 	}
 
 	viewKeys, err := keychain.getViewKeys()
