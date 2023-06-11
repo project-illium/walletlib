@@ -63,7 +63,9 @@ func (k *HDPrivateKey) PrivateKey() crypto.PrivKey {
 func seedToNetworkKey(seed []byte) (*HDPrivateKey, error) {
 	mac := hmac.New(sha512.New, []byte(NetworkKeyMacCode))
 	res := mac.Sum(seed)
-	privKey, err := crypto.UnmarshalEd25519PrivateKey(res[:ed25519.PrivateKeySize])
+
+	sk := ed25519.NewKeyFromSeed(res[:ed25519.SeedSize])
+	privKey, err := crypto.UnmarshalEd25519PrivateKey(sk)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +78,8 @@ func seedToNetworkKey(seed []byte) (*HDPrivateKey, error) {
 func seedToSpendMaster(seed []byte) (*HDPrivateKey, error) {
 	mac := hmac.New(sha512.New, []byte(SpendMasterKeyMacCode))
 	res := mac.Sum(seed)
-	privKey, err := crypto.UnmarshalEd25519PrivateKey(res[:ed25519.PrivateKeySize])
+	sk := ed25519.NewKeyFromSeed(res[:ed25519.SeedSize])
+	privKey, err := crypto.UnmarshalEd25519PrivateKey(sk)
 	if err != nil {
 		return nil, err
 	}
