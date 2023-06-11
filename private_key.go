@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/crypto/pb"
 	crypto2 "github.com/project-illium/ilxd/crypto"
+	icrypto "github.com/project-illium/ilxd/crypto"
 )
 
 const WalletKeyPrefix = "priv"
@@ -60,6 +61,16 @@ func (k *WalletPrivateKey) Sign([]byte) ([]byte, error) {
 // Return a public key paired with this private key
 func (k *WalletPrivateKey) GetPublic() crypto.PubKey {
 	return nil
+}
+
+func (k *WalletPrivateKey) SpendKey() crypto.PrivKey {
+	sk, _ := crypto.UnmarshalEd25519PrivateKey(k.spendKey[:])
+	return sk
+}
+
+func (k *WalletPrivateKey) ViewKey() crypto.PrivKey {
+	sk, _ := icrypto.UnmarshalCurve25519PrivateKey(k.spendKey[:])
+	return sk
 }
 
 // UnmarshalWalletPrivateKey returns a private key from input bytes.
