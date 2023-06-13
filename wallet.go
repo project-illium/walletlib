@@ -559,8 +559,8 @@ func (w *Wallet) ChangeWalletPassphrase(currentPassphrase, newPassphrase string)
 	return w.keychain.ChangePassphrase(currentPassphrase, newPassphrase)
 }
 
-func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount) (types.ID, error) {
-	tx, err := w.buildAndProveTransaction(toAddr, amount, feePerKB)
+func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
+	tx, err := w.buildAndProveTransaction(toAddr, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
@@ -633,8 +633,12 @@ func (w *Wallet) Close() {
 		log.Errorf("wallet close error: %s", err)
 	}
 
-	w.accdb.Flush(blockchain.FlushRequired, w.chainHeight)
-	w.ds.Close()
+	if err := w.accdb.Flush(blockchain.FlushRequired, w.chainHeight); err != nil {
+		log.Errorf("wallet close error: %s", err)
+	}
+	if err := w.ds.Close(); err != nil {
+		log.Errorf("wallet close error: %s", err)
+	}
 }
 
 type WalletTransaction struct {

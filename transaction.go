@@ -24,7 +24,7 @@ import (
 
 var ErrInsufficientFunds = errors.New("insufficient funds")
 
-func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, feePerKB types.Amount) (*transactions.Transaction, error) {
+func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
@@ -35,6 +35,30 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 	// Create the input source
 	var notes []*pb.SpendNote
 	inputSource := func(amount types.Amount) (types.Amount, []*pb.SpendNote, error) {
+		if len(inputCommitments) > 0 {
+			total := types.Amount(0)
+			for _, commitment := range inputCommitments {
+				result, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
+				if err != nil {
+					return 0, nil, err
+				}
+
+				var note pb.SpendNote
+				if err := proto.Unmarshal(result, &note); err != nil {
+					return 0, nil, err
+				}
+
+				if IsDustInput(types.Amount(note.Amount), feePerKB) {
+					continue
+				}
+				notes = append(notes, &note)
+				total += types.Amount(note.Amount)
+				if total > amount {
+					return total, notes, nil
+				}
+			}
+			return total, notes, nil
+		}
 		results, err := w.ds.Query(context.Background(), query.Query{
 			Prefix: NotesDatastoreKeyPrefix,
 		})

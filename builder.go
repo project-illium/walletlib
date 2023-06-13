@@ -127,10 +127,12 @@ func selectInputs(amount types.Amount, fetchInputs InputSource, feePerKB types.A
 		if total < amount+fee {
 			return nil, 0, ErrInsufficientFunds
 		}
-		if total < amount+fee {
-			fee = ComputeFee(len(notes), 1, feePerKB)
+		fee = ComputeFee(len(notes), 1, feePerKB)
+		remainingAmount := total - amount
+		if remainingAmount < fee {
 			continue
 		}
+
 		return notes, fee, nil
 	}
 }
