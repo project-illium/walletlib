@@ -316,7 +316,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	}
 	w.ConnectBlock(blk3)
 
-	cbtx, err := w.BuildCoinbaseTransaction(types.Amount(2000000), priv)
+	cbtx, err := w.BuildCoinbaseTransaction(types.Amount(2000000), nil, priv)
 	assert.NoError(t, err)
 
 	blk4 := &blocks.Block{

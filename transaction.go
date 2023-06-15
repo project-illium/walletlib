@@ -428,13 +428,16 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	return transactions.WrapTransaction(tx), nil
 }
 
-func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, networkKey crypto.PrivKey) (*transactions.Transaction, error) {
+func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Address, networkKey crypto.PrivKey) (*transactions.Transaction, error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
-	addr, err := w.keychain.Address()
-	if err != nil {
-		return nil, err
+	var err error
+	if addr == nil {
+		addr, err = w.keychain.Address()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	peerID, err := peer.IDFromPrivateKey(networkKey)
