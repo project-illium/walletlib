@@ -262,21 +262,21 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			if commitment, ok := w.nullifiers[n]; ok {
 				b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
 				if err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				var note pb.SpendNote
 				if err := proto.Unmarshal(b, &note); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				walletOut += types.Amount(note.Amount)
 				if err := w.ds.Delete(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String())); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				if err := w.ds.Delete(context.Background(), datastore.NewKey(NullifierKeyPrefix+n.String())); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				delete(w.nullifiers, n)
@@ -292,25 +292,25 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 
 				addrInfo, err := w.keychain.addrInfo(match.Key)
 				if err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 
 				note := types.SpendNote{}
 				if err := note.Deserialize(match.DecryptedNote); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				if !bytes.Equal(hash.HashFunc(match.DecryptedNote), out.Commitment) {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: decrypted note hash does not match commitment")
 					continue
 				}
 				if note.AssetID.Compare(types.IlliumCoinID) != 0 {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: note assetID is not illium coinID")
 					continue
 				}
 				if note.Amount == 0 {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Error("Wallet connect block error: note amount is zero")
 					continue
 				}
 
@@ -332,20 +332,20 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 				ser, err := proto.Marshal(dbNote)
 				if err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment)), ser); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				nullifier, err := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
 				if err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NullifierKeyPrefix+nullifier.String()), out.Commitment); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				w.nullifiers[nullifier] = types.NewID(out.Commitment)
@@ -363,23 +363,23 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			if ok {
 				b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
 				if err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				var note pb.SpendNote
 				if err := proto.Unmarshal(b, &note); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				note.Staked = true
 
 				ser, err := proto.Marshal(&note)
 				if err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()), ser); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
 				log.Debugf("Wallet detected stake tx. Txid: %s in block %d", tx.ID(), blk.Header.Height)
@@ -391,7 +391,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			flushMode = blockchain.FlushRequired
 		}
 		if err := accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
-			log.Errorf("Wallet connect block error:, %s", err)
+			log.Errorf("Wallet connect block error: %s", err)
 		}
 		if !isRescan {
 			w.chainHeight = blk.Header.Height
@@ -407,11 +407,11 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			}
 			ser, err := proto.Marshal(wtx)
 			if err != nil {
-				log.Errorf("Wallet connect block error:, %s", err)
+				log.Errorf("Wallet connect block error: %s", err)
 				continue
 			}
 			if err := w.ds.Put(context.Background(), datastore.NewKey(TransactionDatastoreKeyPrefix+tx.ID().String()), ser); err != nil {
-				log.Errorf("Wallet connect block error:, %s", err)
+				log.Errorf("Wallet connect block error: %s", err)
 				continue
 			}
 
@@ -419,7 +419,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				heightBytes := make([]byte, 32)
 				binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
 				if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
-					log.Errorf("Wallet connect block error:, %s", err)
+					log.Errorf("Wallet connect block error: %s", err)
 				}
 			}
 			direction := "incoming"
