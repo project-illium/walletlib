@@ -286,7 +286,6 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 		}
 		for _, out := range tx.Outputs() {
 			if match, ok := matches[types.NewID(out.Commitment)]; ok {
-
 				accumulator.Insert(out.Commitment, true)
 				commitmentIndex := accumulator.NumElements() - 1
 

@@ -229,3 +229,133 @@ func TestTransactions(t *testing.T) {
 	err = w.Stake([]types.ID{types.NewID(notes[0].Commitment)})
 	assert.NoError(t, err)
 }
+
+func TestCoinbaseAndSpends(t *testing.T) {
+	ds := mock.NewMapDatastore()
+	priv, _, err := lcrypto.GenerateEd25519Key(rand.Reader)
+	assert.NoError(t, err)
+
+	broadcastChan := make(chan *transactions.Transaction)
+	w, err := NewWallet([]Option{
+		Datastore(ds),
+		DataDir(repo.DefaultHomeDir),
+		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
+		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
+			return nil, 0, blockchain.ErrNoCheckpoint
+		}),
+		BroadcastFunction(func(tx *transactions.Transaction) error {
+			go func() { broadcastChan <- tx }()
+			return nil
+		}),
+		Params(&params.RegestParams),
+	}...)
+	assert.NoError(t, err)
+
+	addr, err := w.Address()
+	assert.NoError(t, err)
+
+	toAmount := types.Amount(1000000)
+	output, _, err := buildOutput(addr, toAmount)
+	assert.NoError(t, err)
+
+	// Receive
+	blk0 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 0},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk0)
+
+	output, _, err = buildOutput(addr, toAmount)
+	assert.NoError(t, err)
+
+	// Receive2
+	blk1 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 1},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk1)
+
+	notes, err := w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 2)
+
+	// Stake
+	var salt [32]byte
+	copy(salt[:], notes[1].Salt)
+	nullifier, err := types.CalculateNullifier(notes[1].AccIndex, salt, notes[1].UnlockingScript.ScriptCommitment, notes[1].UnlockingScript.ScriptParams...)
+	assert.NoError(t, err)
+	blk2 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 2},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StakeTransaction{
+				Nullifier: nullifier[:],
+			}),
+		},
+	}
+	w.ConnectBlock(blk2)
+
+	// Spend
+	addr, _, _, err = mockAddress()
+	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
+	assert.NoError(t, err)
+
+	tx := <-broadcastChan
+	blk3 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 3},
+		Transactions: []*transactions.Transaction{
+			tx,
+		},
+	}
+	w.ConnectBlock(blk3)
+
+	cbtx, err := w.BuildCoinbaseTransaction(types.Amount(2000000), priv)
+	assert.NoError(t, err)
+
+	blk4 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 4},
+		Transactions: []*transactions.Transaction{
+			cbtx,
+		},
+	}
+	w.ConnectBlock(blk4)
+
+	notes, err = w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 3)
+
+	// Spend
+	addr, _, _, err = mockAddress()
+	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
+	assert.NoError(t, err)
+
+	tx = <-broadcastChan
+	blk5 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 5},
+		Transactions: []*transactions.Transaction{
+			tx,
+		},
+	}
+	w.ConnectBlock(blk5)
+
+	// Spend
+	addr, _, _, err = mockAddress()
+	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
+	assert.NoError(t, err)
+
+	tx = <-broadcastChan
+	blk6 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 6},
+		Transactions: []*transactions.Transaction{
+			tx,
+		},
+	}
+	w.ConnectBlock(blk6)
+}
