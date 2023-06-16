@@ -638,6 +638,14 @@ func (kc *Keychain) Lock() error {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
 
+	encrypted, err := kc.ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	if err != nil {
+		return err
+	}
+	if encrypted[0] == 0x00 {
+		return errors.New("wallet not encrypted, use setpassphrase first")
+	}
+
 	if kc.isEncrypted {
 		return errors.New("wallet is already locked")
 	}
