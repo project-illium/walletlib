@@ -613,7 +613,10 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 	}
 	if rescan {
 		go func() {
-			if err := w.rescanWallet(rescanHeight-1, curveKey); err != nil {
+			if rescanHeight > 0 {
+				rescanHeight = rescanHeight - 1
+			}
+			if err := w.rescanWallet(rescanHeight, curveKey); err != nil {
 				log.Errorf("rescan wallet error: %s", err)
 			}
 		}()
