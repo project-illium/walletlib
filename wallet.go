@@ -205,7 +205,12 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 		return errors.New("rescan already running")
 	}
 
-	scanner := NewTransactionScanner(keys...)
+	viewKeys, err := w.ViewKeys()
+	if err != nil {
+		log.Errorf("Error loading view keys during rescan: %s", err)
+	}
+
+	scanner := NewTransactionScanner(append(viewKeys, keys...)...)
 	accdb := blockchain.NewAccumulatorDB(mock.NewMapDatastore())
 
 	checkpoint, height, err := w.getAccFunc(fromHeight)
