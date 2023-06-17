@@ -94,7 +94,7 @@ func (s *TransactionScanner) ScanOutputs(blk *blocks.Block) map[types.ID]*ScanMa
 		close(workChan)
 	}()
 
-	for i := 0; i < outputs; i++ {
+	for i := 0; i < outputs*len(s.keys); i++ {
 		match := <-resultChan
 		if match != nil {
 			ret[match.Commitment] = match
