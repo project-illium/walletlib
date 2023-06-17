@@ -216,6 +216,9 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 			return err
 		}
 	}
+	if height == 0 {
+		w.connectBlock(w.params.GenesisBlock, scanner, accdb, true)
+	}
 
 	getHeight := height + 1
 	log.Debugf("Wallet rescan started at height: %d", getHeight)
