@@ -477,6 +477,19 @@ func (w *Wallet) Addresses() ([]Address, error) {
 	return w.keychain.Addresses()
 }
 
+func (w *Wallet) AddressInfo(addr Address) (*pb.AddrInfo, error) {
+	ser, err := w.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()))
+	if err != nil {
+		return nil, err
+	}
+
+	var addrInfo pb.AddrInfo
+	if err := proto.Unmarshal(ser, &addrInfo); err != nil {
+		return nil, err
+	}
+	return &addrInfo, nil
+}
+
 func (w *Wallet) Balance() (types.Amount, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
