@@ -101,7 +101,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 	}
 
 	// Sign the inputs
-	sigHash, err := rawTx.Tx.SigHash()
+	sigHash, err := rawTx.Tx.GetStandardTransaction().SigHash()
 	if err != nil {
 		return nil, err
 	}
@@ -128,18 +128,15 @@ inputLoop:
 		Inputs:  rawTx.PrivateInputs,
 		Outputs: rawTx.PrivateOutputs,
 	}
-	sighash, err := rawTx.Tx.SigHash()
-	if err != nil {
-		return nil, err
-	}
+
 	publicParams := &standard.PublicParams{
-		TXORoot:    rawTx.Tx.TxoRoot,
-		SigHash:    sighash,
-		Nullifiers: rawTx.Tx.Nullifiers,
-		Fee:        rawTx.Tx.Fee,
+		TXORoot:    rawTx.Tx.GetStandardTransaction().TxoRoot,
+		SigHash:    sigHash,
+		Nullifiers: rawTx.Tx.GetStandardTransaction().Nullifiers,
+		Fee:        rawTx.Tx.GetStandardTransaction().Fee,
 	}
 
-	for _, out := range rawTx.Tx.Outputs {
+	for _, out := range rawTx.Tx.GetStandardTransaction().Outputs {
 		publicParams.Outputs = append(publicParams.Outputs, standard.PublicOutput{
 			Commitment: out.Commitment,
 			CipherText: out.Ciphertext,
@@ -151,9 +148,9 @@ inputLoop:
 		return nil, err
 	}
 
-	rawTx.Tx.Proof = proof
+	rawTx.Tx.GetStandardTransaction().Proof = proof
 
-	return transactions.WrapTransaction(rawTx.Tx), nil
+	return rawTx.Tx, nil
 }
 
 func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, addChangeOutput bool, feePerKB types.Amount) (*RawTransaction, error) {
@@ -217,9 +214,6 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 						return 0, nil, err
 					}
 
-					if IsDustInput(types.Amount(note.Amount), feePerKB) {
-						continue
-					}
 					notes = append(notes, &note)
 					total += types.Amount(note.Amount)
 					if total > amount {
@@ -262,16 +256,14 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 						},
 						AccIndex: in.PrivateInput.CommitmentIndex,
 					}
-					if IsDustInput(types.Amount(note.Amount), feePerKB) {
-						continue
-					}
+
 					notes = append(notes, note)
 					total += types.Amount(note.Amount)
 					if total > amount {
 						return total, notes, nil
 					}
 				} else {
-					return total, notes, errors.New("commitment or private key not set")
+					return total, notes, errors.New("commitment or private input not set")
 				}
 			}
 			return total, notes, nil
@@ -286,13 +278,155 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 	return BuildTransaction(outputs, inputSource, changeSource, w.GetInclusionProofs, feePerKB)
 }
 
+func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error) {
+	w.mtx.RLock()
+	defer w.mtx.RUnlock()
+
+	if in == nil {
+		return nil, errors.New("input is nil")
+	}
+
+	var inputNote *pb.SpendNote
+	if in.Commitment != nil {
+		result, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(in.Commitment)))
+		if err != nil {
+			return nil, err
+		}
+
+		var note pb.SpendNote
+		if err := proto.Unmarshal(result, &note); err != nil {
+			return nil, err
+		}
+
+		inputNote = &note
+	} else if in.PrivateInput != nil {
+		us := types.UnlockingScript{
+			ScriptCommitment: in.PrivateInput.ScriptCommitment,
+			ScriptParams:     in.PrivateInput.ScriptParams,
+		}
+		scriptHash := us.Hash()
+
+		if len(in.PrivateInput.ScriptParams) < 1 {
+			return nil, errors.New("public key not found in private script params")
+		}
+
+		sn := &types.SpendNote{
+			ScriptHash: scriptHash[:],
+			Amount:     types.Amount(in.PrivateInput.Amount),
+			AssetID:    in.PrivateInput.AssetID,
+			State:      in.PrivateInput.State,
+			Salt:       in.PrivateInput.Salt,
+		}
+		commitment, err := sn.Commitment()
+		if err != nil {
+			return nil, err
+		}
+
+		note := &pb.SpendNote{
+			Commitment: commitment[:],
+			ScriptHash: scriptHash[:],
+			Amount:     in.PrivateInput.Amount,
+			Asset_ID:   in.PrivateInput.AssetID[:],
+			State:      in.PrivateInput.State[:],
+			Salt:       in.PrivateInput.Salt[:],
+			UnlockingScript: &pb.UnlockingScript{
+				ScriptCommitment: in.PrivateInput.ScriptCommitment,
+				ScriptParams:     in.PrivateInput.ScriptParams,
+			},
+			AccIndex: in.PrivateInput.CommitmentIndex,
+		}
+
+		inputNote = note
+	} else {
+		return nil, errors.New("commitment or private input must be set")
+	}
+
+	networkKey, err := w.keychain.NetworkKey()
+	if err != nil {
+		return nil, err
+	}
+	valID, err := peer.IDFromPrivateKey(networkKey)
+	if err != nil {
+		return nil, err
+	}
+	valBytes, err := valID.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	proofs, root, err := w.GetInclusionProofs(types.NewID(inputNote.Commitment))
+	if err != nil {
+		return nil, err
+	}
+
+	var salt [32]byte
+	copy(salt[:], inputNote.Salt)
+	nullifier, err := types.CalculateNullifier(proofs[0].Index, salt, inputNote.UnlockingScript.ScriptCommitment, inputNote.UnlockingScript.ScriptParams...)
+	if err != nil {
+		return nil, err
+	}
+
+	privkey, err := w.keychain.spendKey(inputNote.KeyIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	stakeTx := &transactions.StakeTransaction{
+		Validator_ID: valBytes,
+		Amount:       inputNote.Amount,
+		Nullifier:    nullifier[:],
+		TxoRoot:      root[:],
+		Locktime:     0,
+	}
+
+	sigHash, err := stakeTx.SigHash()
+	if err != nil {
+		return nil, err
+	}
+	spendSig, err := privkey.Sign(sigHash)
+	if err != nil {
+		return nil, err
+	}
+
+	netSig, err := networkKey.Sign(sigHash)
+	if err != nil {
+		return nil, err
+	}
+
+	stakeTx.Signature = netSig
+
+	privateInput := standard.PrivateInput{
+		Amount:          inputNote.Amount,
+		CommitmentIndex: proofs[0].Index,
+		InclusionProof: standard.InclusionProof{
+			Hashes:      proofs[0].Hashes,
+			Flags:       proofs[0].Flags,
+			Accumulator: proofs[0].Accumulator,
+		},
+		ScriptCommitment: inputNote.UnlockingScript.ScriptCommitment,
+		ScriptParams:     inputNote.UnlockingScript.ScriptParams,
+		UnlockingParams:  [][]byte{spendSig},
+	}
+	copy(privateInput.Salt[:], inputNote.Salt)
+	copy(privateInput.AssetID[:], inputNote.Asset_ID)
+	copy(privateInput.State[:], inputNote.State)
+
+	rawTx := &RawTransaction{
+		Tx: transactions.WrapTransaction(stakeTx),
+		PrivateInputs: []standard.PrivateInput{
+			privateInput,
+		},
+	}
+	return rawTx, nil
+}
+
 func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transactions.Transaction, error) {
 	if len(keys) != len(rawTx.PrivateInputs) {
 		return nil, errors.New("invalid number of keys")
 	}
 
 	// Sign the inputs
-	sigHash, err := rawTx.Tx.SigHash()
+	sigHash, err := rawTx.Tx.GetStandardTransaction().SigHash()
 	if err != nil {
 		return nil, err
 	}
@@ -310,18 +444,18 @@ func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transac
 		Inputs:  rawTx.PrivateInputs,
 		Outputs: rawTx.PrivateOutputs,
 	}
-	sighash, err := rawTx.Tx.SigHash()
+	sighash, err := rawTx.Tx.GetStandardTransaction().SigHash()
 	if err != nil {
 		return nil, err
 	}
 	publicParams := &standard.PublicParams{
-		TXORoot:    rawTx.Tx.TxoRoot,
+		TXORoot:    rawTx.Tx.GetStandardTransaction().TxoRoot,
 		SigHash:    sighash,
-		Nullifiers: rawTx.Tx.Nullifiers,
-		Fee:        rawTx.Tx.Fee,
+		Nullifiers: rawTx.Tx.GetStandardTransaction().Nullifiers,
+		Fee:        rawTx.Tx.GetStandardTransaction().Fee,
 	}
 
-	for _, out := range rawTx.Tx.Outputs {
+	for _, out := range rawTx.Tx.GetStandardTransaction().Outputs {
 		publicParams.Outputs = append(publicParams.Outputs, standard.PublicOutput{
 			Commitment: out.Commitment,
 			CipherText: out.Ciphertext,
@@ -333,7 +467,7 @@ func ProveRawTransaction(rawTx *RawTransaction, keys []crypto.PrivKey) (*transac
 		return nil, err
 	}
 
-	rawTx.Tx.Proof = proof
+	rawTx.Tx.GetStandardTransaction().Proof = proof
 	return transactions.WrapTransaction(rawTx.Tx), nil
 }
 

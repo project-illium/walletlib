@@ -250,7 +250,6 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 		}
 		getHeight++
 		w.mtx.Unlock()
-
 	}
 	return nil
 }

@@ -60,6 +60,8 @@ func TestWallet(t *testing.T) {
 	}...)
 	assert.NoError(t, err)
 
+	w.connectBlock(params.RegestParams.GenesisBlock, w.scanner, w.accdb, false)
+
 	addr, err := w.Address()
 	assert.NoError(t, err)
 

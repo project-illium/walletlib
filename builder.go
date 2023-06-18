@@ -18,7 +18,7 @@ import (
 )
 
 type RawTransaction struct {
-	Tx             *transactions.StandardTransaction
+	Tx             *transactions.Transaction
 	PrivateInputs  []standard.PrivateInput
 	PrivateOutputs []standard.PrivateOutput
 }
@@ -40,10 +40,12 @@ type ProofsSource func(commitments ...types.ID) ([]*blockchain.InclusionProof, t
 
 func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange ChangeSource, fetchProofs ProofsSource, feePerKB types.Amount) (*RawTransaction, error) {
 	raw := &RawTransaction{
-		Tx:             &transactions.StandardTransaction{},
+		Tx:             &transactions.Transaction{},
 		PrivateInputs:  []standard.PrivateInput{},
 		PrivateOutputs: []standard.PrivateOutput{},
 	}
+
+	standardTx := &transactions.StandardTransaction{}
 
 	// First calculate the out amount
 	toAmt := types.Amount(0)
@@ -56,7 +58,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 	if err != nil {
 		return nil, err
 	}
-	raw.Tx.Fee = uint64(fee)
+	standardTx.Fee = uint64(fee)
 
 	// In this iteration extract the commitments and sum the total input amount
 	totalIn := types.Amount(0)
@@ -73,7 +75,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 	if err != nil {
 		return nil, err
 	}
-	raw.Tx.TxoRoot = txoRoot[:]
+	standardTx.TxoRoot = txoRoot[:]
 
 	// Build the inputs
 	for i, note := range inputNotes {
@@ -81,7 +83,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 		if err != nil {
 			return nil, err
 		}
-		raw.Tx.Nullifiers = append(raw.Tx.Nullifiers, nullifier[:])
+		standardTx.Nullifiers = append(standardTx.Nullifiers, nullifier[:])
 		raw.PrivateInputs = append(raw.PrivateInputs, privIn)
 	}
 
@@ -91,7 +93,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 		if err != nil {
 			return nil, err
 		}
-		raw.Tx.Outputs = append(raw.Tx.Outputs, txOut)
+		standardTx.Outputs = append(standardTx.Outputs, txOut)
 		raw.PrivateOutputs = append(raw.PrivateOutputs, privOut)
 	}
 
@@ -106,9 +108,11 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 		if err != nil {
 			return nil, err
 		}
-		raw.Tx.Outputs = append(raw.Tx.Outputs, txOut)
+		standardTx.Outputs = append(standardTx.Outputs, txOut)
 		raw.PrivateOutputs = append(raw.PrivateOutputs, privOut)
 	}
+
+	raw.Tx = transactions.WrapTransaction(standardTx)
 
 	// Randomize input and output order
 	shuffleTransaction(raw)
@@ -204,13 +208,15 @@ func buildOutput(addr Address, amt types.Amount) (*transactions.Output, standard
 }
 
 func shuffleTransaction(raw *RawTransaction) {
-	mrand.Seed(time.Now().Unix())
-	mrand.Shuffle(len(raw.Tx.Nullifiers), func(i, j int) {
-		raw.Tx.Nullifiers[i], raw.Tx.Nullifiers[j] = raw.Tx.Nullifiers[j], raw.Tx.Nullifiers[i]
-		raw.PrivateInputs[i], raw.PrivateInputs[j] = raw.PrivateInputs[j], raw.PrivateInputs[i]
-	})
-	mrand.Shuffle(len(raw.Tx.Outputs), func(i, j int) {
-		raw.Tx.Outputs[i], raw.Tx.Outputs[j] = raw.Tx.Outputs[j], raw.Tx.Outputs[i]
-		raw.PrivateOutputs[i], raw.PrivateOutputs[j] = raw.PrivateOutputs[j], raw.PrivateOutputs[i]
-	})
+	if raw.Tx.GetStandardTransaction() != nil {
+		mrand.Seed(time.Now().Unix())
+		mrand.Shuffle(len(raw.Tx.GetStandardTransaction().Nullifiers), func(i, j int) {
+			raw.Tx.GetStandardTransaction().Nullifiers[i], raw.Tx.GetStandardTransaction().Nullifiers[j] = raw.Tx.GetStandardTransaction().Nullifiers[j], raw.Tx.GetStandardTransaction().Nullifiers[i]
+			raw.PrivateInputs[i], raw.PrivateInputs[j] = raw.PrivateInputs[j], raw.PrivateInputs[i]
+		})
+		mrand.Shuffle(len(raw.Tx.GetStandardTransaction().Outputs), func(i, j int) {
+			raw.Tx.GetStandardTransaction().Outputs[i], raw.Tx.GetStandardTransaction().Outputs[j] = raw.Tx.GetStandardTransaction().Outputs[j], raw.Tx.GetStandardTransaction().Outputs[i]
+			raw.PrivateOutputs[i], raw.PrivateOutputs[j] = raw.PrivateOutputs[j], raw.PrivateOutputs[i]
+		})
+	}
 }
