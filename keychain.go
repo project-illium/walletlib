@@ -139,13 +139,23 @@ func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, e
 		return nil, err
 	}
 
-	return &Keychain{
+	kc := &Keychain{
 		ds:          ds,
 		params:      params,
 		isEncrypted: encrypted[0] == 0x01,
 		isPruned:    pruned,
 		mtx:         sync.RWMutex{},
-	}, nil
+	}
+
+	if encrypted[0] == 0x00 && !pruned {
+		mnemonic, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+		if err != nil {
+			return nil, err
+		}
+		kc.unencryptedSeed = bip39.NewSeed(string(mnemonic), "")
+	}
+	
+	return kc, nil
 }
 
 func (kc *Keychain) Addresses() ([]Address, error) {
