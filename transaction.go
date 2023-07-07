@@ -153,6 +153,88 @@ inputLoop:
 	return rawTx.Tx, nil
 }
 
+func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount) (*transactions.Transaction, error) {
+	w.mtx.RLock()
+	defer w.mtx.RUnlock()
+
+	if feePerKB == 0 {
+		feePerKB = w.feePerKB
+	}
+
+	results, err := w.ds.Query(context.Background(), query.Query{
+		Prefix: NotesDatastoreKeyPrefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+	notes := make([]*pb.SpendNote, 0, 1)
+	for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
+		var note pb.SpendNote
+		if err := proto.Unmarshal(result.Value, &note); err != nil {
+			return nil, err
+		}
+		notes = append(notes, &note)
+	}
+
+	// Build tx
+	rawTx, err := BuildSweepTransaction(toAddr, notes, w.GetInclusionProofs, feePerKB)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sign the inputs
+	sigHash, err := rawTx.Tx.GetStandardTransaction().SigHash()
+	if err != nil {
+		return nil, err
+	}
+inputLoop:
+	for i, privIn := range rawTx.PrivateInputs {
+		for _, n := range notes {
+			if n.AccIndex == privIn.CommitmentIndex {
+				privkey, err := w.keychain.spendKey(n.KeyIndex)
+				if err != nil {
+					return nil, err
+				}
+				sig, err := privkey.Sign(sigHash)
+				if err != nil {
+					return nil, err
+				}
+				rawTx.PrivateInputs[i].UnlockingParams = [][]byte{sig}
+				continue inputLoop
+			}
+		}
+	}
+
+	// Create the transaction zk proof
+	privateParams := &standard.PrivateParams{
+		Inputs:  rawTx.PrivateInputs,
+		Outputs: rawTx.PrivateOutputs,
+	}
+
+	publicParams := &standard.PublicParams{
+		TXORoot:    rawTx.Tx.GetStandardTransaction().TxoRoot,
+		SigHash:    sigHash,
+		Nullifiers: rawTx.Tx.GetStandardTransaction().Nullifiers,
+		Fee:        rawTx.Tx.GetStandardTransaction().Fee,
+	}
+
+	for _, out := range rawTx.Tx.GetStandardTransaction().Outputs {
+		publicParams.Outputs = append(publicParams.Outputs, standard.PublicOutput{
+			Commitment: out.Commitment,
+			CipherText: out.Ciphertext,
+		})
+	}
+
+	proof, err := zk.CreateSnark(standard.StandardCircuit, privateParams, publicParams)
+	if err != nil {
+		return nil, err
+	}
+
+	rawTx.Tx.GetStandardTransaction().Proof = proof
+
+	return rawTx.Tx, nil
+}
+
 func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, addChangeOutput bool, feePerKB types.Amount) (*RawTransaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()

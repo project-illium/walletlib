@@ -599,6 +599,17 @@ func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amoun
 	return tx.ID(), nil
 }
 
+func (w *Wallet) SweepWallet(toAddr Address, feePerKB types.Amount) (types.ID, error) {
+	tx, err := w.sweepAndProveTransaction(toAddr, feePerKB)
+	if err != nil {
+		return types.ID{}, err
+	}
+	if err := w.broadcastFunc(tx); err != nil {
+		return types.ID{}, err
+	}
+	return tx.ID(), nil
+}
+
 func (w *Wallet) Stake(commitments []types.ID) error {
 	for _, commitment := range commitments {
 		tx, err := w.buildAndProveStakeTransaction(commitment)

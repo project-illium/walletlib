@@ -120,8 +120,58 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 	return raw, nil
 }
 
+func BuildSweepTransaction(toAddr Address, inputNotes []*pb.SpendNote, fetchProofs ProofsSource, feePerKB types.Amount) (*RawTransaction, error) {
+	raw := &RawTransaction{
+		Tx:             &transactions.Transaction{},
+		PrivateInputs:  []standard.PrivateInput{},
+		PrivateOutputs: []standard.PrivateOutput{},
+	}
+
+	fee := ComputeFee(len(inputNotes), 1, feePerKB)
+	standardTx := &transactions.StandardTransaction{
+		Fee: uint64(fee),
+	}
+
+	totalIn := types.Amount(0)
+	commitments := make([]types.ID, 0, len(inputNotes))
+	for _, in := range inputNotes {
+		totalIn += types.Amount(in.Amount)
+		commitments = append(commitments, types.NewID(in.Commitment))
+	}
+
+	proofs, txoRoot, err := fetchProofs(commitments...)
+	if err != nil {
+		return nil, err
+	}
+	standardTx.TxoRoot = txoRoot[:]
+
+	// Build the inputs
+	for i, note := range inputNotes {
+		nullifier, privIn, err := buildInput(note, proofs[i])
+		if err != nil {
+			return nil, err
+		}
+		standardTx.Nullifiers = append(standardTx.Nullifiers, nullifier[:])
+		raw.PrivateInputs = append(raw.PrivateInputs, privIn)
+	}
+
+	txOut, privOut, err := buildOutput(toAddr, totalIn-fee)
+	if err != nil {
+		return nil, err
+	}
+	standardTx.Outputs = append(standardTx.Outputs, txOut)
+	raw.PrivateOutputs = append(raw.PrivateOutputs, privOut)
+
+	raw.Tx = transactions.WrapTransaction(standardTx)
+
+	// Randomize input and output order
+	shuffleTransaction(raw)
+
+	return raw, nil
+}
+
 func selectInputs(amount types.Amount, fetchInputs InputSource, feePerKB types.Amount) ([]*pb.SpendNote, types.Amount, error) {
-	fee := ComputeFee(0, 1, feePerKB)
+	fee := ComputeFee(0, 2, feePerKB)
 
 	for {
 		total, notes, err := fetchInputs(amount + fee)
@@ -131,7 +181,7 @@ func selectInputs(amount types.Amount, fetchInputs InputSource, feePerKB types.A
 		if total < amount+fee {
 			return nil, 0, ErrInsufficientFunds
 		}
-		fee = ComputeFee(len(notes), 1, feePerKB)
+		fee = ComputeFee(len(notes), 2, feePerKB)
 		remainingAmount := total - amount
 		if remainingAmount < fee {
 			continue

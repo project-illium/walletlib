@@ -218,17 +218,15 @@ func TestTransactions(t *testing.T) {
 	notes, err := w.Notes()
 	assert.NoError(t, err)
 
-	rawtx, err := w.CreateRawTransaction([]*RawInput{{Commitment: notes[0].Commitment}}, []*RawOutput{{Addr: addr, Amount: amt}}, true, 0)
-	assert.NoError(t, err)
-
-	// Prove raw tx
-	spendKey, err := w.keychain.spendKey(notes[0].KeyIndex)
-	assert.NoError(t, err)
-	_, err = ProveRawTransaction(rawtx, []lcrypto.PrivKey{spendKey})
+	_, err = w.CreateRawTransaction([]*RawInput{{Commitment: notes[0].Commitment}}, []*RawOutput{{Addr: addr, Amount: amt}}, true, 0)
 	assert.NoError(t, err)
 
 	// Stake
 	err = w.Stake([]types.ID{types.NewID(notes[0].Commitment)})
+	assert.NoError(t, err)
+
+	// Sweep
+	_, err = w.SweepWallet(addr, 10)
 	assert.NoError(t, err)
 }
 
@@ -360,4 +358,18 @@ func TestCoinbaseAndSpends(t *testing.T) {
 		},
 	}
 	w.ConnectBlock(blk6)
+
+	// Sweep
+	addr, _, _, err = mockAddress()
+	_, err = w.SweepWallet(addr, types.Amount(10))
+	assert.NoError(t, err)
+
+	tx = <-broadcastChan
+	blk7 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 7},
+		Transactions: []*transactions.Transaction{
+			tx,
+		},
+	}
+	w.ConnectBlock(blk7)
 }

@@ -154,7 +154,7 @@ func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, e
 		}
 		kc.unencryptedSeed = bip39.NewSeed(string(mnemonic), "")
 	}
-	
+
 	return kc, nil
 }
 
