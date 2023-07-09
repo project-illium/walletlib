@@ -45,7 +45,9 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 		PrivateOutputs: []standard.PrivateOutput{},
 	}
 
-	standardTx := &transactions.StandardTransaction{}
+	standardTx := &transactions.StandardTransaction{
+		Locktime: time.Now().Unix(),
+	}
 
 	// First calculate the out amount
 	toAmt := types.Amount(0)
@@ -129,7 +131,8 @@ func BuildSweepTransaction(toAddr Address, inputNotes []*pb.SpendNote, fetchProo
 
 	fee := ComputeFee(len(inputNotes), 1, feePerKB)
 	standardTx := &transactions.StandardTransaction{
-		Fee: uint64(fee),
+		Fee:      uint64(fee),
+		Locktime: time.Now().Unix(),
 	}
 
 	totalIn := types.Amount(0)

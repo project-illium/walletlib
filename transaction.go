@@ -458,7 +458,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 		Amount:       inputNote.Amount,
 		Nullifier:    nullifier[:],
 		TxoRoot:      root[:],
-		Locktime:     0,
+		Locktime:     time.Now().Unix(),
 	}
 
 	sigHash, err := stakeTx.SigHash()
@@ -550,6 +550,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 		Amount:       note.Amount,
 		Nullifier:    nullifier[:],
 		TxoRoot:      txoRoot[:],
+		Locktime:     time.Now().Unix(),
 		Signature:    nil,
 		Proof:        nil,
 	}

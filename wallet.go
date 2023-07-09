@@ -326,6 +326,12 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					continue
 				}
 
+				if !bytes.Equal(note.ScriptHash, addrInfo.ScriptHash) {
+					accumulator.DropProof(out.Commitment)
+					log.Error("Wallet connect block error: note doesn't match script hash. Block height: %d: Addr: %s", blk.Header.Height, addrInfo.Addr)
+					continue
+				}
+
 				dbNote := &pb.SpendNote{
 					Address:    addrInfo.Addr,
 					Commitment: out.Commitment,

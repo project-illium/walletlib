@@ -24,6 +24,11 @@ func TestKeyDerivation(t *testing.T) {
 	assert.NoError(t, err)
 	childPub := childPriv.GetPublic()
 
+	childPriv2, err := master.Child(1)
+	assert.NoError(t, err)
+
+	assert.False(t, childPriv.Equals(childPriv2))
+
 	sig, err := childPriv.Sign(message)
 	assert.NoError(t, err)
 

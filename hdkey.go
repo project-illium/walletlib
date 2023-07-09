@@ -33,7 +33,8 @@ func (k *HDPrivateKey) Child(n uint32) (*HDPrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := mac.Sum(append(rawKey, nBytes...))
+	mac.Write(append(rawKey, nBytes...))
+	res := mac.Sum(nil)
 
 	// New from seed does not actually mutate the seed/private key. Instead,
 	// it just appends the public key which it computes as point(sha512(seed))

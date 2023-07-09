@@ -25,9 +25,10 @@ message WalletTransaction {
 message AddrInfo {
     string addr                      = 1;
     UnlockingScript unlocking_script = 2;
-    bytes view_priv_key              = 3;
-    uint32 key_index                 = 4;
-    bool watch_only                  = 5;
+    bytes script_hash                = 3;
+    bytes view_priv_key              = 4;
+    uint32 key_index                 = 5;
+    bool watch_only                  = 6;
 }
 
 message UnlockingScript {
