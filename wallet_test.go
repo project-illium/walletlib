@@ -66,7 +66,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount := types.Amount(1000000)
-	output, _, err := buildOutput(addr, toAmount)
+	output, _, err := buildOutput(addr, toAmount, [128]byte{})
 	assert.NoError(t, err)
 
 	// Receive
@@ -123,7 +123,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount = types.Amount(1000000)
-	output, _, err = buildOutput(addr, toAmount)
+	output, _, err = buildOutput(addr, toAmount, [128]byte{})
 	assert.NoError(t, err)
 
 	// Receive to unknown addr
@@ -192,7 +192,7 @@ func TestTransactions(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount := types.Amount(1000000)
-	output, _, err := buildOutput(addr, toAmount)
+	output, _, err := buildOutput(addr, toAmount, [128]byte{})
 	assert.NoError(t, err)
 
 	// Receive
@@ -255,7 +255,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount := types.Amount(1000000)
-	output, _, err := buildOutput(addr, toAmount)
+	output, _, err := buildOutput(addr, toAmount, [128]byte{})
 	assert.NoError(t, err)
 
 	// Receive
@@ -269,7 +269,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	}
 	w.ConnectBlock(blk0)
 
-	output, _, err = buildOutput(addr, toAmount)
+	output, _, err = buildOutput(addr, toAmount, [128]byte{})
 	assert.NoError(t, err)
 
 	// Receive2
@@ -372,4 +372,41 @@ func TestCoinbaseAndSpends(t *testing.T) {
 		},
 	}
 	w.ConnectBlock(blk7)
+
+	// Receive
+	blk8 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 8},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk8)
+
+	// Timelock
+	_, err = w.TimelockCoins(types.Amount(800000), time.Now().Add(time.Hour), types.Amount(10))
+	assert.NoError(t, err)
+
+	tx = <-broadcastChan
+	blk9 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 7},
+		Transactions: []*transactions.Transaction{
+			tx,
+		},
+	}
+	w.ConnectBlock(blk9)
+
+	notes, err = w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 2)
+
+	timeLocked := false
+	for _, n := range notes {
+		if n.LockedUntil > 0 {
+			timeLocked = true
+			break
+		}
+	}
+	assert.True(t, timeLocked)
 }

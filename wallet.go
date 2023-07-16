@@ -326,6 +326,41 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					continue
 				}
 
+				locktime := int64(0)
+				if note.State != [128]byte{} {
+					script := types.UnlockingScript{
+						ScriptCommitment: MockTimelockedMultisigScriptCommitment,
+						ScriptParams: [][]byte{
+							{0x01},
+							note.State[:8],
+							addrInfo.UnlockingScript.ScriptParams[0],
+						},
+					}
+					scriptHash := script.Hash()
+
+					if bytes.Equal(note.ScriptHash, scriptHash[:]) {
+						locktime = int64(binary.BigEndian.Uint64(note.State[:8]))
+
+						priv, err := lcrypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
+						if err != nil {
+							accumulator.DropProof(out.Commitment)
+							log.Errorf("Err unmarshalling view key: %s", err)
+							continue
+						}
+
+						addr, err := NewBasicAddress(script, priv.GetPublic(), w.params)
+						if err != nil {
+							accumulator.DropProof(out.Commitment)
+							log.Errorf("Err creating timelocked address: %s", err)
+							continue
+						}
+						addrInfo.Addr = addr.String()
+						addrInfo.ScriptHash = scriptHash[:]
+						addrInfo.UnlockingScript.ScriptCommitment = script.ScriptCommitment
+						addrInfo.UnlockingScript.ScriptParams = script.ScriptParams
+					}
+				}
+
 				if !bytes.Equal(note.ScriptHash, addrInfo.ScriptHash) {
 					accumulator.DropProof(out.Commitment)
 					log.Error("Wallet connect block error: note doesn't match script hash. Block height: %d: Addr: %s", blk.Header.Height, addrInfo.Addr)
@@ -347,6 +382,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 						ScriptCommitment: addrInfo.UnlockingScript.ScriptCommitment,
 						ScriptParams:     addrInfo.UnlockingScript.ScriptParams,
 					},
+					LockedUntil: locktime,
 				}
 				ser, err := proto.Marshal(dbNote)
 				if err != nil {
@@ -595,7 +631,7 @@ func (w *Wallet) ChangeWalletPassphrase(currentPassphrase, newPassphrase string)
 }
 
 func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
-	tx, err := w.buildAndProveTransaction(toAddr, amount, feePerKB, inputCommitments...)
+	tx, err := w.buildAndProveTransaction(toAddr, [128]byte{}, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
@@ -607,6 +643,24 @@ func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amoun
 
 func (w *Wallet) SweepWallet(toAddr Address, feePerKB types.Amount) (types.ID, error) {
 	tx, err := w.sweepAndProveTransaction(toAddr, feePerKB)
+	if err != nil {
+		return types.ID{}, err
+	}
+	if err := w.broadcastFunc(tx); err != nil {
+		return types.ID{}, err
+	}
+	return tx.ID(), nil
+}
+
+func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerKB types.Amount) (types.ID, error) {
+	addr, err := w.keychain.TimelockedAddress(lockUntil)
+	if err != nil {
+		return types.ID{}, err
+	}
+	var locktime [128]byte
+	binary.BigEndian.PutUint64(locktime[:8], uint64(lockUntil.Unix()))
+
+	tx, err := w.buildAndProveTransaction(addr, locktime, amount, feePerKB)
 	if err != nil {
 		return types.ID{}, err
 	}

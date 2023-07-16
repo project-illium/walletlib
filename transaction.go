@@ -24,7 +24,7 @@ import (
 
 var ErrInsufficientFunds = errors.New("insufficient funds")
 
-func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
+func (w *Wallet) buildAndProveTransaction(toAddr Address, toState [128]byte, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
@@ -81,6 +81,10 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 				continue
 			}
 
+			if time.Unix(note.LockedUntil, 0).After(time.Now()) {
+				continue
+			}
+
 			if IsDustInput(types.Amount(note.Amount), feePerKB) {
 				continue
 			}
@@ -95,7 +99,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, amount types.Amount, f
 	}
 
 	// Build tx
-	rawTx, err := BuildTransaction([]*RawOutput{{toAddr, amount}}, inputSource, w.keychain.Address, w.GetInclusionProofs, feePerKB)
+	rawTx, err := BuildTransaction([]*RawOutput{{toAddr, amount, toState}}, inputSource, w.keychain.Address, w.GetInclusionProofs, feePerKB)
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +176,9 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 		var note pb.SpendNote
 		if err := proto.Unmarshal(result.Value, &note); err != nil {
 			return nil, err
+		}
+		if time.Unix(note.LockedUntil, 0).After(time.Now()) {
+			continue
 		}
 		notes = append(notes, &note)
 	}
@@ -265,6 +272,10 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 				}
 
 				if note.Staked {
+					continue
+				}
+
+				if time.Unix(note.LockedUntil, 0).After(time.Now()) {
 					continue
 				}
 
@@ -616,7 +627,7 @@ func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Addr
 		return nil, err
 	}
 
-	output, privOut, err := buildOutput(addr, unclaimedCoins)
+	output, privOut, err := buildOutput(addr, unclaimedCoins, [128]byte{})
 	if err != nil {
 		return nil, err
 	}

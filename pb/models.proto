@@ -13,7 +13,8 @@ message SpendNote {
     uint64 acc_index                 = 9;
     bool watch_only                  = 10;
     bool staked                      = 11;
-    UnlockingScript unlocking_script = 12;
+    int64 locked_until               = 12;
+    UnlockingScript unlocking_script = 13;
 }
 
 message WalletTransaction {

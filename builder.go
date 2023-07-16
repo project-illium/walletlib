@@ -32,6 +32,7 @@ type RawInput struct {
 type RawOutput struct {
 	Addr   Address
 	Amount types.Amount
+	State  [128]byte
 }
 
 type InputSource func(amount types.Amount) (types.Amount, []*pb.SpendNote, error)
@@ -91,7 +92,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 
 	// Build the outputs
 	for _, o := range outputs {
-		txOut, privOut, err := buildOutput(o.Addr, o.Amount)
+		txOut, privOut, err := buildOutput(o.Addr, o.Amount, o.State)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +107,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 			return nil, err
 		}
 
-		txOut, privOut, err := buildOutput(changeAddr, totalIn-(toAmt+fee))
+		txOut, privOut, err := buildOutput(changeAddr, totalIn-(toAmt+fee), [128]byte{})
 		if err != nil {
 			return nil, err
 		}
@@ -158,7 +159,7 @@ func BuildSweepTransaction(toAddr Address, inputNotes []*pb.SpendNote, fetchProo
 		raw.PrivateInputs = append(raw.PrivateInputs, privIn)
 	}
 
-	txOut, privOut, err := buildOutput(toAddr, totalIn-fee)
+	txOut, privOut, err := buildOutput(toAddr, totalIn-fee, [128]byte{})
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +218,7 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 	return nullifier, privIn, nil
 }
 
-func buildOutput(addr Address, amt types.Amount) (*transactions.Output, standard.PrivateOutput, error) {
+func buildOutput(addr Address, amt types.Amount, state [128]byte) (*transactions.Output, standard.PrivateOutput, error) {
 	addrScriptHash := addr.ScriptHash()
 	var salt [32]byte
 	rand.Read(salt[:])
@@ -225,7 +226,7 @@ func buildOutput(addr Address, amt types.Amount) (*transactions.Output, standard
 		ScriptHash: addrScriptHash[:],
 		Amount:     amt,
 		AssetID:    types.IlliumCoinID,
-		State:      [128]byte{},
+		State:      state,
 		Salt:       salt,
 	}
 

@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"github.com/ipfs/go-datastore"
@@ -36,7 +37,8 @@ var (
 	ErrPublicOnlyKeychain    = errors.New("keychain public only")
 	ErrPermissionDenied      = errors.New("permission denied")
 
-	MockBasicUnlockScriptCommitment = bytes.Repeat([]byte{0xff}, 32)
+	MockBasicUnlockScriptCommitment        = bytes.Repeat([]byte{0xff}, 32)
+	MockTimelockedMultisigScriptCommitment = bytes.Repeat([]byte{0xab}, 32)
 )
 
 const (
@@ -197,6 +199,45 @@ func (kc *Keychain) Address() (Address, error) {
 	}
 
 	return DecodeAddress(string(addrStr), kc.params)
+}
+
+func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
+	kc.mtx.RLock()
+	defer kc.mtx.RUnlock()
+
+	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+	if err != nil {
+		return nil, err
+	}
+
+	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
+	if err != nil {
+		return nil, err
+	}
+
+	var currentAddrInfo pb.AddrInfo
+	if err := proto.Unmarshal(ser, &currentAddrInfo); err != nil {
+		return nil, err
+	}
+
+	timeBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(timeBytes, uint64(lockUntil.Unix()))
+
+	script := types.UnlockingScript{
+		ScriptCommitment: MockTimelockedMultisigScriptCommitment,
+		ScriptParams: [][]byte{
+			{0x01},
+			timeBytes,
+			currentAddrInfo.UnlockingScript.ScriptParams[0],
+		},
+	}
+
+	viewKey, err := crypto.UnmarshalPrivateKey(currentAddrInfo.ViewPrivKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewBasicAddress(script, viewKey.GetPublic(), kc.params)
 }
 
 func (kc *Keychain) NewAddress() (Address, error) {
