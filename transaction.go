@@ -561,7 +561,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 		Amount:       note.Amount,
 		Nullifier:    nullifier[:],
 		TxoRoot:      txoRoot[:],
-		Locktime:     time.Now().Unix(),
+		Locktime:     note.LockedUntil,
 		Signature:    nil,
 		Proof:        nil,
 	}
