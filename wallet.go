@@ -652,7 +652,7 @@ func (w *Wallet) SweepWallet(toAddr Address, feePerKB types.Amount) (types.ID, e
 	return tx.ID(), nil
 }
 
-func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerKB types.Amount) (types.ID, error) {
+func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
 	addr, err := w.keychain.TimelockedAddress(lockUntil)
 	if err != nil {
 		return types.ID{}, err
@@ -660,7 +660,7 @@ func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerK
 	var locktime [128]byte
 	binary.BigEndian.PutUint64(locktime[:8], uint64(lockUntil.Unix()))
 
-	tx, err := w.buildAndProveTransaction(addr, locktime, amount, feePerKB)
+	tx, err := w.buildAndProveTransaction(addr, locktime, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
