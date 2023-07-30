@@ -594,7 +594,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 		SigHash:   sigHash,
 		Amount:    note.Amount,
 		Nullifier: nullifier[:],
-		Locktime:  time.Time{},
+		Locktime:  time.Unix(note.LockedUntil, 0),
 	}
 
 	proof, err := zk.CreateSnark(stake.StakeCircuit, privateParams, publicParams)
