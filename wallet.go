@@ -514,6 +514,10 @@ func (w *Wallet) NewAddress() (Address, error) {
 	return w.keychain.NewAddress()
 }
 
+func (w *Wallet) TimelockedAddress(lockUntil time.Time) (Address, error) {
+	return w.keychain.TimelockedAddress(lockUntil)
+}
+
 func (w *Wallet) Addresses() ([]Address, error) {
 	return w.keychain.Addresses()
 }
