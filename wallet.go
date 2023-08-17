@@ -395,12 +395,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
-				nullifier, err := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
-				if err != nil {
-					accumulator.DropProof(out.Commitment)
-					log.Errorf("Wallet connect block error: %s", err)
-					continue
-				}
+				nullifier := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NullifierKeyPrefix+nullifier.String()), out.Commitment); err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.Errorf("Wallet connect block error: %s", err)

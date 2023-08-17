@@ -211,10 +211,7 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 	copy(privIn.AssetID[:], note.Asset_ID)
 	copy(privIn.State[:], note.State)
 
-	nullifier, err := types.CalculateNullifier(proof.Index, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
-	if err != nil {
-		return types.Nullifier{}, standard.PrivateInput{}, err
-	}
+	nullifier := types.CalculateNullifier(proof.Index, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
 	return nullifier, privIn, nil
 }
 

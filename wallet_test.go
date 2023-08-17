@@ -89,8 +89,7 @@ func TestWallet(t *testing.T) {
 
 	var salt [32]byte
 	copy(salt[:], notes[0].Salt)
-	nullifier, err := types.CalculateNullifier(notes[0].AccIndex, salt, notes[0].UnlockingScript.ScriptCommitment, notes[0].UnlockingScript.ScriptParams...)
-	assert.NoError(t, err)
+	nullifier := types.CalculateNullifier(notes[0].AccIndex, salt, notes[0].UnlockingScript.ScriptCommitment, notes[0].UnlockingScript.ScriptParams...)
 
 	// Spend
 	blk2 := &blocks.Block{
@@ -290,8 +289,8 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	// Stake
 	var salt [32]byte
 	copy(salt[:], notes[1].Salt)
-	nullifier, err := types.CalculateNullifier(notes[1].AccIndex, salt, notes[1].UnlockingScript.ScriptCommitment, notes[1].UnlockingScript.ScriptParams...)
-	assert.NoError(t, err)
+	nullifier := types.CalculateNullifier(notes[1].AccIndex, salt, notes[1].UnlockingScript.ScriptCommitment, notes[1].UnlockingScript.ScriptParams...)
+
 	blk2 := &blocks.Block{
 		Header: &blocks.BlockHeader{Height: 2},
 		Transactions: []*transactions.Transaction{

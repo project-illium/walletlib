@@ -454,10 +454,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 
 	var salt [32]byte
 	copy(salt[:], inputNote.Salt)
-	nullifier, err := types.CalculateNullifier(proofs[0].Index, salt, inputNote.UnlockingScript.ScriptCommitment, inputNote.UnlockingScript.ScriptParams...)
-	if err != nil {
-		return nil, err
-	}
+	nullifier := types.CalculateNullifier(proofs[0].Index, salt, inputNote.UnlockingScript.ScriptCommitment, inputNote.UnlockingScript.ScriptParams...)
 
 	privkey, err := w.keychain.spendKey(inputNote.KeyIndex)
 	if err != nil {
