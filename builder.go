@@ -227,10 +227,7 @@ func buildOutput(addr Address, amt types.Amount, state [128]byte) (*transactions
 		Salt:       salt,
 	}
 
-	outputCommitment, err := outputNote.Commitment()
-	if err != nil {
-		return nil, standard.PrivateOutput{}, err
-	}
+	outputCommitment := outputNote.Commitment()
 
 	serializedOutputNote := outputNote.Serialize()
 	toViewKey, ok := addr.ViewKey().(*crypto.Curve25519PublicKey)

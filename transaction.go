@@ -331,10 +331,7 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 						State:      in.PrivateInput.State,
 						Salt:       in.PrivateInput.Salt,
 					}
-					commitment, err := sn.Commitment()
-					if err != nil {
-						return 0, nil, err
-					}
+					commitment := sn.Commitment()
 
 					note := &pb.SpendNote{
 						Commitment: commitment[:],
@@ -410,10 +407,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 			State:      in.PrivateInput.State,
 			Salt:       in.PrivateInput.Salt,
 		}
-		commitment, err := sn.Commitment()
-		if err != nil {
-			return nil, err
-		}
+		commitment := sn.Commitment()
 
 		note := &pb.SpendNote{
 			Commitment: commitment[:],
