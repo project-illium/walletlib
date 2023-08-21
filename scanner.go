@@ -9,6 +9,7 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
+	"golang.org/x/exp/slices"
 	"runtime"
 	"sync"
 )
@@ -50,6 +51,18 @@ func (s *TransactionScanner) AddKeys(keys ...*crypto.Curve25519PrivateKey) {
 	defer s.mtx.Unlock()
 
 	s.keys = append(s.keys, keys...)
+}
+
+// RemoveKey removes scan keys from the TransactionScanner
+func (s *TransactionScanner) RemoveKey(key *crypto.Curve25519PrivateKey) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	for i, k := range s.keys {
+		if k.Equals(key) {
+			slices.Delete(s.keys, i, i+1)
+		}
+	}
 }
 
 // ScanOutputs attempts to decrypt the outputs using the keys and returns a map of matches
