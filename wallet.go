@@ -23,7 +23,6 @@ import (
 	"github.com/project-illium/ilxd/repo/mock"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
-	"github.com/project-illium/ilxd/types/transactions"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"go.uber.org/zap"
@@ -37,26 +36,21 @@ import (
 const MnemonicEntropyBits = 256
 
 type Wallet struct {
-	ds            repo.Datastore
-	params        *params.NetworkParams
-	keychain      *Keychain
-	nullifiers    map[types.Nullifier]types.ID
-	scanner       *TransactionScanner
-	accdb         *blockchain.AccumulatorDB
-	feePerKB      types.Amount
-	broadcastFunc BroadcastFunc
-	getBlocksFunc GetBlockFunc
-	getAccFunc    GetAccumulatorCheckpointFunc
-	chainHeight   uint32
-	rescan        uint32
-	newWallet     bool
+	ds          repo.Datastore
+	params      *params.NetworkParams
+	keychain    *Keychain
+	nullifiers  map[types.Nullifier]types.ID
+	scanner     *TransactionScanner
+	accdb       *blockchain.AccumulatorDB
+	feePerKB    types.Amount
+	chainClient BlockchainClient
+	chainHeight uint32
+	rescan      uint32
+	newWallet   bool
 
-	mtx sync.RWMutex
+	done chan struct{}
+	mtx  sync.RWMutex
 }
-
-type BroadcastFunc func(tx *transactions.Transaction) error
-type GetBlockFunc func(height uint32) (*blocks.Block, error)
-type GetAccumulatorCheckpointFunc func(height uint32) (*blockchain.Accumulator, uint32, error)
 
 func NewWallet(opts ...Option) (*Wallet, error) {
 	var cfg config
@@ -149,19 +143,18 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 	}
 
 	return &Wallet{
-		ds:            ds,
-		params:        cfg.params,
-		keychain:      keychain,
-		nullifiers:    nullifiers,
-		feePerKB:      fpkb,
-		broadcastFunc: cfg.broadcastFunc,
-		getBlocksFunc: cfg.getBlockFunc,
-		getAccFunc:    cfg.getAccFunc,
-		accdb:         adb,
-		chainHeight:   height,
-		scanner:       NewTransactionScanner(viewKeys...),
-		newWallet:     newWallet,
-		mtx:           sync.RWMutex{},
+		ds:          ds,
+		params:      cfg.params,
+		keychain:    keychain,
+		nullifiers:  nullifiers,
+		feePerKB:    fpkb,
+		chainClient: cfg.chainClient,
+		accdb:       adb,
+		chainHeight: height,
+		scanner:     NewTransactionScanner(viewKeys...),
+		newWallet:   newWallet,
+		done:        make(chan struct{}),
+		mtx:         sync.RWMutex{},
 	}, nil
 }
 
@@ -172,7 +165,7 @@ func (w *Wallet) Start() {
 	log.Info("Wallet started. Syncing blocks to tip...")
 
 	if w.newWallet {
-		genesis, err := w.getBlocksFunc(0)
+		genesis, err := w.chainClient.GetBlock(0)
 		if err != nil {
 			log.Errorf("Wallet error fetching genesis block: %s", err)
 		}
@@ -181,7 +174,7 @@ func (w *Wallet) Start() {
 
 	for {
 		height := w.chainHeight + 1
-		blk, err := w.getBlocksFunc(height)
+		blk, err := w.chainClient.GetBlock(height)
 		if err != nil {
 			break
 		}
@@ -190,6 +183,41 @@ func (w *Wallet) Start() {
 			log.Debugf("Wallet synced to height %d", height)
 		}
 	}
+
+	go func() {
+		ch, err := w.chainClient.SubscribeBlocks()
+		if err != nil {
+			log.Error("Error subscribing to chain client:", err)
+			return
+		}
+	loop:
+		for {
+			select {
+			case <-w.done:
+				return
+			case blk := <-ch:
+				if blk == nil {
+					continue
+				}
+				w.mtx.RLock()
+				currentHeight := w.chainHeight
+				w.mtx.RUnlock()
+
+				if blk.Header.Height > currentHeight+1 {
+					for i := currentHeight + 1; i < blk.Header.Height; i++ {
+						missingBlock, err := w.chainClient.GetBlock(i)
+						if err != nil {
+							log.Error("Error fetching block from chain client", err)
+							continue loop
+						}
+						w.ConnectBlock(missingBlock)
+					}
+				}
+				w.ConnectBlock(blk)
+			}
+		}
+	}()
+
 	log.Info("Wallet sync complete.")
 }
 
@@ -213,7 +241,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 	scanner := NewTransactionScanner(append(viewKeys, keys...)...)
 	accdb := blockchain.NewAccumulatorDB(mock.NewMapDatastore())
 
-	checkpoint, height, err := w.getAccFunc(fromHeight)
+	checkpoint, height, err := w.chainClient.GetAccumulatorCheckpoint(fromHeight)
 	if err != nil && !errors.Is(err, blockchain.ErrNoCheckpoint) {
 		return err
 	} else if err == nil {
@@ -228,7 +256,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 	getHeight := height + 1
 	log.Debugf("Wallet rescan started at height: %d", getHeight)
 	for {
-		blk, err := w.getBlocksFunc(getHeight)
+		blk, err := w.chainClient.GetBlock(getHeight)
 		if err != nil {
 			break
 		}
@@ -634,7 +662,7 @@ func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amoun
 	if err != nil {
 		return types.ID{}, err
 	}
-	if err := w.broadcastFunc(tx); err != nil {
+	if err := w.chainClient.Broadcast(tx); err != nil {
 		return types.ID{}, err
 	}
 	return tx.ID(), nil
@@ -645,7 +673,7 @@ func (w *Wallet) SweepWallet(toAddr Address, feePerKB types.Amount) (types.ID, e
 	if err != nil {
 		return types.ID{}, err
 	}
-	if err := w.broadcastFunc(tx); err != nil {
+	if err := w.chainClient.Broadcast(tx); err != nil {
 		return types.ID{}, err
 	}
 	return tx.ID(), nil
@@ -663,7 +691,7 @@ func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerK
 	if err != nil {
 		return types.ID{}, err
 	}
-	if err := w.broadcastFunc(tx); err != nil {
+	if err := w.chainClient.Broadcast(tx); err != nil {
 		return types.ID{}, err
 	}
 	return tx.ID(), nil
@@ -675,7 +703,7 @@ func (w *Wallet) Stake(commitments []types.ID) error {
 		if err != nil {
 			return err
 		}
-		if err := w.broadcastFunc(tx); err != nil {
+		if err := w.chainClient.Broadcast(tx); err != nil {
 			return err
 		}
 	}
@@ -729,6 +757,7 @@ func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.Incl
 }
 
 func (w *Wallet) Close() {
+	close(w.done)
 	heightBytes := make([]byte, 32)
 	binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
 	if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {

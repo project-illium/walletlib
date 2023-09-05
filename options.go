@@ -61,35 +61,13 @@ func FeePerKB(fpkb types.Amount) Option {
 	}
 }
 
-// BroadcastFunction is a function to broadcast a transaction to the
-// network.
+// BlockchainSource is an implementation of the BlockchainClient that provides
+// access to blockchain data.
 //
-// This function is not optional.
-func BroadcastFunction(broadcast BroadcastFunc) Option {
+// This is not optional.
+func BlockchainSource(client BlockchainClient) Option {
 	return func(cfg *config) error {
-		cfg.broadcastFunc = broadcast
-		return nil
-	}
-}
-
-// GetBlockFunction is a function to fetch a block from the chain
-// given the height.
-//
-// This function is not optional.
-func GetBlockFunction(getBlock GetBlockFunc) Option {
-	return func(cfg *config) error {
-		cfg.getBlockFunc = getBlock
-		return nil
-	}
-}
-
-// GetAccumulatorCheckpointFunction is a function to fetch an accumulator checkpoint
-// from the blockchain.
-//
-// This function is not optional.
-func GetAccumulatorCheckpointFunction(getAccFunc GetAccumulatorCheckpointFunc) Option {
-	return func(cfg *config) error {
-		cfg.getAccFunc = getAccFunc
+		cfg.chainClient = client
 		return nil
 	}
 }
@@ -103,15 +81,13 @@ func Logger(logger *zap.SugaredLogger) Option {
 }
 
 type config struct {
-	datastore     repo.Datastore
-	params        *params.NetworkParams
-	feePerKB      types.Amount
-	broadcastFunc BroadcastFunc
-	getBlockFunc  GetBlockFunc
-	getAccFunc    GetAccumulatorCheckpointFunc
-	logger        *zap.SugaredLogger
-	dataDir       string
-	mnemonic      string
+	datastore   repo.Datastore
+	params      *params.NetworkParams
+	feePerKB    types.Amount
+	chainClient BlockchainClient
+	logger      *zap.SugaredLogger
+	dataDir     string
+	mnemonic    string
 }
 
 func (c *config) validate() error {
@@ -121,14 +97,8 @@ func (c *config) validate() error {
 	if c.dataDir == "" {
 		return errors.New("dataDir cannot be empty")
 	}
-	if c.broadcastFunc == nil {
-		return errors.New("broadcastfunc cannot be nil")
-	}
-	if c.getBlockFunc == nil {
-		return errors.New("getBlockFunc cannot be nil")
-	}
-	if c.getAccFunc == nil {
-		return errors.New("getAccFunc cannot be nil")
+	if c.chainClient == nil {
+		return errors.New("BlockchainClient cannot be nil")
 	}
 	return nil
 }
