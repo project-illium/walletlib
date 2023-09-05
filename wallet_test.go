@@ -51,11 +51,13 @@ func TestWallet(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
-		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
-			return nil, 0, blockchain.ErrNoCheckpoint
+		BlockchainSource(&InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
+			GetBlockFunc:  func(height uint32) (*blocks.Block, error) { return nil, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
 		}),
-		BroadcastFunction(func(tx *transactions.Transaction) error { return nil }),
 		Params(&params.RegestParams),
 	}...)
 	assert.NoError(t, err)
@@ -148,7 +150,7 @@ func TestWallet(t *testing.T) {
 	assert.Len(t, txs, 2)
 
 	// Import and rescan
-	w.getBlocksFunc = func(height uint32) (*blocks.Block, error) {
+	w.chainClient.(*InternalClient).GetBlockFunc = func(height uint32) (*blocks.Block, error) {
 		if height == 1 {
 			return blk1, nil
 		} else if height == 2 {
@@ -178,11 +180,13 @@ func TestTransactions(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
-		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
-			return nil, 0, blockchain.ErrNoCheckpoint
+		BlockchainSource(&InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
+			GetBlockFunc:  func(height uint32) (*blocks.Block, error) { return nil, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
 		}),
-		BroadcastFunction(func(tx *transactions.Transaction) error { return nil }),
 		Params(&params.RegestParams),
 	}...)
 	assert.NoError(t, err)
@@ -238,13 +242,15 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
-		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
-			return nil, 0, blockchain.ErrNoCheckpoint
-		}),
-		BroadcastFunction(func(tx *transactions.Transaction) error {
-			go func() { broadcastChan <- tx }()
-			return nil
+		BlockchainSource(&InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error {
+				go func() { broadcastChan <- tx }()
+				return nil
+			},
+			GetBlockFunc: func(height uint32) (*blocks.Block, error) { return nil, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
 		}),
 		Params(&params.RegestParams),
 	}...)
