@@ -34,7 +34,10 @@ import (
 	"time"
 )
 
-const MnemonicEntropyBits = 256
+const (
+	MnemonicEntropyBits = 256
+	maxBatchSize        = 2000
+)
 
 type Mode int
 
@@ -190,23 +193,26 @@ func (w *Wallet) Start() {
 	log.Info("Wallet started. Syncing blocks to tip...")
 
 	if w.newWallet {
-		genesis, err := w.chainClient.GetBlock(0)
-		if err != nil {
+		blks, err := w.chainClient.GetBlocks(0, 0)
+		if err != nil || len(blks) == 0 {
 			log.Errorf("Wallet error fetching genesis block: %s", err)
 		}
-		w.connectBlock(genesis, w.scanner, w.accdb, false)
+		w.connectBlock(blks[0], w.scanner, w.accdb, false)
 	}
 
 	for {
-		height := w.chainHeight + 1
-		blk, err := w.chainClient.GetBlock(height)
+		from := w.chainHeight + 1
+		blks, err := w.chainClient.GetBlocks(from, from+maxBatchSize)
 		if err != nil {
 			break
 		}
-		w.connectBlock(blk, w.scanner, w.accdb, false)
-		if height%10000 == 0 {
-			log.Debugf("Wallet synced to height %d", height)
+		for _, blk := range blks {
+			w.connectBlock(blk, w.scanner, w.accdb, false)
+			if blk.Header.Height%10000 == 0 {
+				log.Debugf("Wallet synced to height %d", blk.Header.Height)
+			}
 		}
+
 		if w.mode.Is(ModeLite) {
 			break
 		}
@@ -218,6 +224,7 @@ func (w *Wallet) Start() {
 			log.Errorf("Error subscribing to chain client: %s", err)
 			return
 		}
+
 	loop:
 		for {
 			select {
@@ -227,21 +234,26 @@ func (w *Wallet) Start() {
 				if blk == nil {
 					continue
 				}
-				w.mtx.RLock()
-				currentHeight := w.chainHeight
-				w.mtx.RUnlock()
-
-				if blk.Header.Height > currentHeight+1 {
-					for i := currentHeight + 1; i < blk.Header.Height; i++ {
-						missingBlock, err := w.chainClient.GetBlock(i)
+				w.mtx.Lock()
+				if blk.Header.Height > w.chainHeight+1 && !w.mode.Is(ModeLite) {
+					for {
+						from := w.chainHeight + 1
+						blks, err := w.chainClient.GetBlocks(from, blk.Header.Height-1)
 						if err != nil {
-							log.Errorf("Error fetching block from chain client: %s", err)
+							log.Errorf("Error fetching blocks from chain client: %s", err)
 							continue loop
 						}
-						w.ConnectBlock(missingBlock)
+						for _, b := range blks {
+							w.connectBlock(b, w.scanner, w.accdb, false)
+						}
+
+						if w.chainHeight == blk.Header.Height-1 {
+							break
+						}
 					}
 				}
-				w.ConnectBlock(blk)
+				w.connectBlock(blk, w.scanner, w.accdb, false)
+				w.mtx.Unlock()
 			}
 		}
 	}()
@@ -291,31 +303,33 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 	getHeight := height + 1
 	log.Debugf("Wallet rescan started at height: %d", getHeight)
 	for {
-		blk, err := w.chainClient.GetBlock(getHeight)
+		blks, err := w.chainClient.GetBlocks(getHeight, getHeight+maxBatchSize)
 		if err != nil {
 			break
 		}
 
 		w.mtx.Lock()
-		w.connectBlock(blk, scanner, accdb, true)
-		if getHeight%10000 == 0 {
-			log.Debugf("Wallet rescanned to height %d", getHeight)
-		}
-
-		if w.mode.Is(ModeLite) {
-			break
-		}
-
-		if getHeight == w.chainHeight {
-			if err := w.accdb.Commit(accdb.Accumulator(), w.chainHeight, blockchain.FlushRequired); err != nil {
-				return err
+		for _, blk := range blks {
+			w.connectBlock(blk, scanner, accdb, true)
+			if blk.Header.Height%10000 == 0 {
+				log.Debugf("Wallet rescanned to height %d", getHeight)
 			}
-			atomic.SwapUint32(&w.rescan, 0)
-			w.mtx.Unlock()
-			log.Debugf("Wallet rescan complete")
-			return nil
+			if w.mode.Is(ModeLite) {
+				w.mtx.Unlock()
+				break
+			}
+
+			if blk.Header.Height == w.chainHeight {
+				if err := w.accdb.Commit(accdb.Accumulator(), w.chainHeight, blockchain.FlushRequired); err != nil {
+					return err
+				}
+				atomic.SwapUint32(&w.rescan, 0)
+				w.mtx.Unlock()
+				log.Debugf("Wallet rescan complete")
+				return nil
+			}
+			getHeight = blk.Header.Height + 1
 		}
-		getHeight++
 		w.mtx.Unlock()
 	}
 	return nil

@@ -54,7 +54,7 @@ func TestWallet(t *testing.T) {
 		DataDir(repo.DefaultHomeDir),
 		BlockchainSource(&client.InternalClient{
 			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
-			GetBlockFunc:  func(height uint32) (*blocks.Block, error) { return nil, nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
 				return nil, 0, blockchain.ErrNoCheckpoint
 			},
@@ -151,13 +151,24 @@ func TestWallet(t *testing.T) {
 	assert.Len(t, txs, 2)
 
 	// Import and rescan
-	w.chainClient.(*client.InternalClient).GetBlockFunc = func(height uint32) (*blocks.Block, error) {
-		if height == 1 {
-			return blk1, nil
-		} else if height == 2 {
-			return blk2, nil
+	w.chainClient.(*client.InternalClient).GetBlocksFunc = func(from, to uint32) ([]*blocks.Block, error) {
+		var ret []*blocks.Block
+		switch from {
+		case 1:
+			ret = append(ret, blk1)
+		case 2:
+			ret = append(ret, blk2)
+		case 3:
+			ret = append(ret, blk3)
 		}
-		return blk3, nil
+		if from == 1 && to == 2 {
+			ret = append(ret, blk2)
+		} else if from == 1 && to == 3 {
+			ret = append(ret, blk2, blk3)
+		} else if from == 2 && to == 3 {
+			ret = append(ret, blk3)
+		}
+		return ret, nil
 	}
 
 	assert.NoError(t, w.ImportAddress(addr, unlockingScript, viewPriv, true, 1))
@@ -183,7 +194,7 @@ func TestTransactions(t *testing.T) {
 		DataDir(repo.DefaultHomeDir),
 		BlockchainSource(&client.InternalClient{
 			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
-			GetBlockFunc:  func(height uint32) (*blocks.Block, error) { return nil, nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
 				return nil, 0, blockchain.ErrNoCheckpoint
 			},
@@ -248,7 +259,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 				go func() { broadcastChan <- tx }()
 				return nil
 			},
-			GetBlockFunc: func(height uint32) (*blocks.Block, error) { return nil, nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
 				return nil, 0, blockchain.ErrNoCheckpoint
 			},
