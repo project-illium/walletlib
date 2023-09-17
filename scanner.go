@@ -9,6 +9,7 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
+	"golang.org/x/exp/slices"
 	"runtime"
 	"sync"
 )
@@ -32,18 +33,14 @@ type scanWork struct {
 // transaction the accumulator and inclusion proofs, but that would require double
 // hashes of the accuumulator for every block.
 type TransactionScanner struct {
-	keys map[crypto.Curve25519PrivateKey]struct{}
+	keys []*crypto.Curve25519PrivateKey
 	mtx  sync.Mutex
 }
 
 // NewTransactionScanner returns a new TransactionScanner
 func NewTransactionScanner(keys ...*crypto.Curve25519PrivateKey) *TransactionScanner {
-	keyMap := make(map[crypto.Curve25519PrivateKey]struct{})
-	for _, k := range keys {
-		keyMap[*k] = struct{}{}
-	}
 	return &TransactionScanner{
-		keys: keyMap,
+		keys: keys,
 		mtx:  sync.Mutex{},
 	}
 }
@@ -53,8 +50,14 @@ func (s *TransactionScanner) AddKeys(keys ...*crypto.Curve25519PrivateKey) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+keyLoop:
 	for _, k := range keys {
-		s.keys[*k] = struct{}{}
+		for _, key := range s.keys {
+			if k.Equals(key) {
+				continue keyLoop
+			}
+		}
+		s.keys = append(s.keys, k)
 	}
 }
 
@@ -63,7 +66,11 @@ func (s *TransactionScanner) RemoveKey(key *crypto.Curve25519PrivateKey) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	delete(s.keys, *key)
+	for i, k := range s.keys {
+		if k.Equals(key) {
+			s.keys = slices.Delete(s.keys, i, i+1)
+		}
+	}
 }
 
 // ScanOutputs attempts to decrypt the outputs using the keys and returns a map of matches
@@ -122,11 +129,11 @@ func (s *TransactionScanner) scanHandler(workChan chan *scanWork, resultChan cha
 		select {
 		case w := <-workChan:
 			if w != nil {
-				for k := range s.keys {
+				for _, k := range s.keys {
 					decrypted, err := k.Decrypt(w.tx.Outputs()[w.index].Ciphertext)
 					if err == nil {
 						resultChan <- &ScanMatch{
-							Key:           &k,
+							Key:           k,
 							Commitment:    types.NewID(w.tx.Outputs()[w.index].Commitment),
 							DecryptedNote: decrypted,
 						}
