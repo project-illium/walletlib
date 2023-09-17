@@ -30,7 +30,7 @@ type LiteClient struct {
 	done             context.CancelFunc
 }
 
-func NewLiteClient(serverAddr, rpcCertPath, authToken string, viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) (*LiteClient, error) {
+func NewLiteClient(serverAddr, rpcCertPath, authToken string) (*LiteClient, error) {
 	certFile := repo.CleanAndExpandPath(rpcCertPath)
 
 	var (
@@ -59,27 +59,11 @@ func NewLiteClient(serverAddr, rpcCertPath, authToken string, viewKey *icrypto.C
 		return nil, err
 	}
 
-	keyBytes, err := crypto.MarshalPrivateKey(viewKey)
-	if err != nil {
-		return nil, err
-	}
-
 	ctx, done := context.WithCancel(context.Background())
-
-	wsClient := pb.NewWalletServerServiceClient(conn)
-	_, err = wsClient.RegisterViewKey(makeContext(ctx, authToken), &pb.RegisterViewKeyRequest{
-		ViewKey:                   keyBytes,
-		SerializedUnlockingScript: ul.Serialize(),
-		Birthday:                  walletBirthday,
-	})
-	if err != nil {
-		return nil, err
-	}
 
 	return &LiteClient{
 		blockchainClient: pb.NewBlockchainServiceClient(conn),
-		wsClient:         wsClient,
-		viewKeyBytes:     keyBytes,
+		wsClient:         pb.NewWalletServerServiceClient(conn),
 		authToken:        authToken,
 		ctx:              ctx,
 		done:             done,
@@ -88,6 +72,21 @@ func NewLiteClient(serverAddr, rpcCertPath, authToken string, viewKey *icrypto.C
 
 func (c *LiteClient) IsFullClient() bool {
 	return false
+}
+
+func (c *LiteClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error {
+	keyBytes, err := crypto.MarshalPrivateKey(viewKey)
+	if err != nil {
+		return err
+	}
+	c.viewKeyBytes = keyBytes
+
+	_, err = c.wsClient.RegisterViewKey(makeContext(c.ctx, c.authToken), &pb.RegisterViewKeyRequest{
+		ViewKey:                   keyBytes,
+		SerializedUnlockingScript: ul.Serialize(),
+		Birthday:                  walletBirthday,
+	})
+	return err
 }
 
 func (c *LiteClient) Broadcast(tx *transactions.Transaction) error {

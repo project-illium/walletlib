@@ -9,6 +9,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
 	"github.com/project-illium/ilxd/blockchain"
+	icrypto "github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/rpc/pb"
 	"github.com/project-illium/ilxd/types"
@@ -69,6 +70,10 @@ func NewRPCClient(serverAddr, rpcCertPath, authToken string) (*RPCClient, error)
 
 func (c *RPCClient) IsFullClient() bool {
 	return true
+}
+
+func (c *RPCClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error {
+	return ErrUnimplemented
 }
 
 func (c *RPCClient) Broadcast(tx *transactions.Transaction) error {

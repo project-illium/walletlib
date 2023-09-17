@@ -36,6 +36,7 @@ import (
 const (
 	MnemonicEntropyBits = 256
 	maxBatchSize        = 2000
+	MinBirthday         = 1694974911
 )
 
 type Wallet struct {
@@ -50,6 +51,7 @@ type Wallet struct {
 	chainHeight uint32
 	rescan      uint32
 	newWallet   bool
+	birthday    time.Time
 
 	done chan struct{}
 	mtx  sync.RWMutex
@@ -156,6 +158,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainHeight: height,
 		scanner:     NewTransactionScanner(viewKeys...),
 		newWallet:   newWallet,
+		birthday:    cfg.birthday,
 		done:        make(chan struct{}),
 		mtx:         sync.RWMutex{},
 	}, nil
@@ -166,6 +169,21 @@ func (w *Wallet) Start() {
 	defer w.mtx.Unlock()
 
 	log.Info("Wallet started. Syncing blocks to tip...")
+
+	if !w.chainClient.IsFullClient() {
+		key, unlockingScript, err := w.registrationParams()
+		if err != nil {
+			log.Errorf("Error loading registration parameters: %s", err)
+		} else {
+			birthday := int64(0)
+			if !w.birthday.Before(time.Unix(MinBirthday, 0)) {
+				birthday = w.birthday.Unix()
+			}
+			if err := w.chainClient.Register(key, unlockingScript, birthday); err != nil {
+				log.Errorf("Error registering lite client with server: %s", err)
+			}
+		}
+	}
 
 	if w.newWallet {
 		w.connectBlock(w.params.GenesisBlock, w.scanner, w.accdb, false)
@@ -833,6 +851,30 @@ func (w *Wallet) Close() {
 	if err := w.ds.Close(); err != nil {
 		log.Errorf("wallet close error: %s", err)
 	}
+}
+
+func (w *Wallet) registrationParams() (*crypto.Curve25519PrivateKey, types.UnlockingScript, error) {
+	addr, err := w.keychain.Address()
+	if err != nil {
+		return nil, types.UnlockingScript{}, err
+	}
+	addrInfo, err := w.keychain.AddrInfo(addr)
+	if err != nil {
+		return nil, types.UnlockingScript{}, err
+	}
+	viewKey, err := lcrypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
+	if err != nil {
+		return nil, types.UnlockingScript{}, err
+	}
+	curveKey, ok := viewKey.(*crypto.Curve25519PrivateKey)
+	if !ok {
+		return nil, types.UnlockingScript{}, errors.New("invalid key type")
+	}
+	ul := types.UnlockingScript{
+		ScriptCommitment: addrInfo.UnlockingScript.ScriptCommitment,
+		ScriptParams:     addrInfo.UnlockingScript.ScriptParams,
+	}
+	return curveKey, ul, nil
 }
 
 type WalletTransaction struct {

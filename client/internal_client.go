@@ -7,6 +7,7 @@ package client
 import (
 	"errors"
 	"github.com/project-illium/ilxd/blockchain"
+	icrypto "github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
@@ -26,6 +27,10 @@ type InternalClient struct {
 
 func (c *InternalClient) IsFullClient() bool {
 	return true
+}
+
+func (c *InternalClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error {
+	return ErrUnimplemented
 }
 
 func (c *InternalClient) Broadcast(tx *transactions.Transaction) error {

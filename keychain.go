@@ -465,6 +465,21 @@ func (kc *Keychain) spendKey(index uint32) (crypto.PrivKey, error) {
 	return hdkey.PrivKey, nil
 }
 
+func (kc *Keychain) AddrInfo(addr Address) (*pb.AddrInfo, error) {
+	kc.mtx.RLock()
+	defer kc.mtx.RUnlock()
+
+	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()))
+	if err != nil {
+		return nil, err
+	}
+	var addrInfo pb.AddrInfo
+	if err := proto.Unmarshal(ser, &addrInfo); err != nil {
+		return nil, err
+	}
+	return &addrInfo, nil
+}
+
 func (kc *Keychain) addrInfo(viewKey crypto.PrivKey) (*pb.AddrInfo, error) {
 	serializedKey, err := crypto.MarshalPrivateKey(viewKey)
 	if err != nil {

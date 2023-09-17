@@ -6,6 +6,7 @@ package walletlib
 
 import (
 	"github.com/project-illium/ilxd/blockchain"
+	icrypto "github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
@@ -19,12 +20,17 @@ type BlockchainClient interface {
 	// scans all blocks) or a lite client (one that outsources block scanning to a
 	// server).
 	//
-	// If True GetAccumulatorCheckpoint will be implemented and GetInclusionProofs will be
-	// unimplemented.
+	// If True GetAccumulatorCheckpoint will be implemented and GetInclusionProofs and
+	// Register will be unimplemented.
 	//
-	// If False GetInclusionProofs will be implemented and GetAccumulatorCheckpoint will be
-	// unimplemented.
+	// If False GetInclusionProofs and Register will be implemented and GetAccumulatorCheckpoint
+	//will be unimplemented.
 	IsFullClient() bool
+
+	// Register is used to register the client with a server.
+	//
+	// This should only be implemented if IsFullClient is false.
+	Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error
 
 	// Broadcast must broadcast the transaction to the illium network
 	Broadcast(tx *transactions.Transaction) error

@@ -10,6 +10,7 @@ import (
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
 	"go.uber.org/zap"
+	"time"
 )
 
 // Option is configuration option function for the blockchain
@@ -72,6 +73,19 @@ func BlockchainSource(client BlockchainClient) Option {
 	}
 }
 
+// Birthday sets the birthday of this wallet. This should be used by LiteClients
+// when restoring from seed. Otherwise, it is not needed.
+//
+// Note: use MinBirthday or later if you want to restore from seed, NOT a zero timestamp.
+// A timestamp less than MinBirthday is not considered valid and will not trigger
+// a rescan.
+func Birthday(birthday time.Time) Option {
+	return func(cfg *config) error {
+		cfg.birthday = birthday
+		return nil
+	}
+}
+
 // Logger sets a logger for the wallet if desired.
 func Logger(logger *zap.SugaredLogger) Option {
 	return func(cfg *config) error {
@@ -88,6 +102,7 @@ type config struct {
 	logger      *zap.SugaredLogger
 	dataDir     string
 	mnemonic    string
+	birthday    time.Time
 }
 
 func (c *config) validate() error {
