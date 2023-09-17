@@ -168,11 +168,7 @@ func (w *Wallet) Start() {
 	log.Info("Wallet started. Syncing blocks to tip...")
 
 	if w.newWallet {
-		blks, err := w.chainClient.GetBlocks(0, 0)
-		if err != nil || len(blks) == 0 {
-			log.Errorf("Wallet error fetching genesis block: %s", err)
-		}
-		w.connectBlock(blks[0], w.scanner, w.accdb, false)
+		w.connectBlock(w.params.GenesisBlock, w.scanner, w.accdb, false)
 	}
 
 	for {
