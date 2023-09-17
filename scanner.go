@@ -9,7 +9,6 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
-	"golang.org/x/exp/slices"
 	"runtime"
 	"sync"
 )
@@ -33,14 +32,18 @@ type scanWork struct {
 // transaction the accumulator and inclusion proofs, but that would require double
 // hashes of the accuumulator for every block.
 type TransactionScanner struct {
-	keys []*crypto.Curve25519PrivateKey
+	keys map[crypto.Curve25519PrivateKey]struct{}
 	mtx  sync.Mutex
 }
 
 // NewTransactionScanner returns a new TransactionScanner
 func NewTransactionScanner(keys ...*crypto.Curve25519PrivateKey) *TransactionScanner {
+	keyMap := make(map[crypto.Curve25519PrivateKey]struct{})
+	for _, k := range keys {
+		keyMap[*k] = struct{}{}
+	}
 	return &TransactionScanner{
-		keys: keys,
+		keys: keyMap,
 		mtx:  sync.Mutex{},
 	}
 }
@@ -50,7 +53,9 @@ func (s *TransactionScanner) AddKeys(keys ...*crypto.Curve25519PrivateKey) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.keys = append(s.keys, keys...)
+	for _, k := range keys {
+		s.keys[*k] = struct{}{}
+	}
 }
 
 // RemoveKey removes scan keys from the TransactionScanner
@@ -58,11 +63,7 @@ func (s *TransactionScanner) RemoveKey(key *crypto.Curve25519PrivateKey) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	for i, k := range s.keys {
-		if k.Equals(key) {
-			slices.Delete(s.keys, i, i+1)
-		}
-	}
+	delete(s.keys, *key)
 }
 
 // ScanOutputs attempts to decrypt the outputs using the keys and returns a map of matches
@@ -121,11 +122,11 @@ func (s *TransactionScanner) scanHandler(workChan chan *scanWork, resultChan cha
 		select {
 		case w := <-workChan:
 			if w != nil {
-				for _, k := range s.keys {
+				for k := range s.keys {
 					decrypted, err := k.Decrypt(w.tx.Outputs()[w.index].Ciphertext)
 					if err == nil {
 						resultChan <- &ScanMatch{
-							Key:           k,
+							Key:           &k,
 							Commitment:    types.NewID(w.tx.Outputs()[w.index].Commitment),
 							DecryptedNote: decrypted,
 						}

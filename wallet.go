@@ -23,6 +23,7 @@ import (
 	"github.com/project-illium/ilxd/repo/mock"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
+	"github.com/project-illium/walletlib/client"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"go.uber.org/zap"
@@ -34,6 +35,18 @@ import (
 )
 
 const MnemonicEntropyBits = 256
+
+type Mode int
+
+func (m Mode) Is(mode Mode) bool {
+	return mode == m
+}
+
+const (
+	ModeLib  Mode = 1
+	ModeRPC  Mode = 2
+	ModeLite Mode = 3
+)
 
 type Wallet struct {
 	ds          repo.Datastore
@@ -47,6 +60,7 @@ type Wallet struct {
 	chainHeight uint32
 	rescan      uint32
 	newWallet   bool
+	mode        Mode
 
 	done chan struct{}
 	mtx  sync.RWMutex
@@ -142,6 +156,16 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		log = zap.S()
 	}
 
+	var mode Mode
+	switch cfg.chainClient.(type) {
+	case *client.InternalClient:
+		mode = ModeLib
+	case *client.RPCClient:
+		mode = ModeRPC
+	case *client.LiteClient:
+		mode = ModeLite
+	}
+
 	return &Wallet{
 		ds:          ds,
 		params:      cfg.params,
@@ -153,6 +177,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainHeight: height,
 		scanner:     NewTransactionScanner(viewKeys...),
 		newWallet:   newWallet,
+		mode:        mode,
 		done:        make(chan struct{}),
 		mtx:         sync.RWMutex{},
 	}, nil
@@ -182,12 +207,15 @@ func (w *Wallet) Start() {
 		if height%10000 == 0 {
 			log.Debugf("Wallet synced to height %d", height)
 		}
+		if w.mode.Is(ModeLite) {
+			break
+		}
 	}
 
 	go func() {
 		ch, err := w.chainClient.SubscribeBlocks()
 		if err != nil {
-			log.Error("Error subscribing to chain client:", err)
+			log.Errorf("Error subscribing to chain client: %s", err)
 			return
 		}
 	loop:
@@ -207,7 +235,7 @@ func (w *Wallet) Start() {
 					for i := currentHeight + 1; i < blk.Header.Height; i++ {
 						missingBlock, err := w.chainClient.GetBlock(i)
 						if err != nil {
-							log.Error("Error fetching block from chain client", err)
+							log.Errorf("Error fetching block from chain client: %s", err)
 							continue loop
 						}
 						w.ConnectBlock(missingBlock)
@@ -228,7 +256,7 @@ func (w *Wallet) ConnectBlock(blk *blocks.Block) {
 	w.connectBlock(blk, w.scanner, w.accdb, false)
 }
 
-func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519PrivateKey) error {
+func (w *Wallet) rescanWallet(fromHeight uint32) error {
 	if atomic.SwapUint32(&w.rescan, 1) != 0 {
 		return errors.New("rescan already running")
 	}
@@ -238,19 +266,26 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 		log.Errorf("Error loading view keys during rescan: %s", err)
 	}
 
-	scanner := NewTransactionScanner(append(viewKeys, keys...)...)
+	scanner := NewTransactionScanner(viewKeys...)
 	accdb := blockchain.NewAccumulatorDB(mock.NewMapDatastore())
 
-	checkpoint, height, err := w.chainClient.GetAccumulatorCheckpoint(fromHeight)
-	if err != nil && !errors.Is(err, blockchain.ErrNoCheckpoint) {
-		return err
-	} else if err == nil {
-		if err := accdb.Commit(checkpoint, height, blockchain.FlushNop); err != nil {
+	var (
+		height     uint32 = 0
+		checkpoint *blockchain.Accumulator
+	)
+
+	if !w.mode.Is(ModeLite) {
+		checkpoint, height, err = w.chainClient.GetAccumulatorCheckpoint(fromHeight)
+		if err != nil && !errors.Is(err, blockchain.ErrNoCheckpoint) {
 			return err
+		} else if err == nil {
+			if err := accdb.Commit(checkpoint, height, blockchain.FlushNop); err != nil {
+				return err
+			}
 		}
-	}
-	if height == 0 {
-		w.connectBlock(w.params.GenesisBlock, scanner, accdb, true)
+		if height == 0 {
+			w.connectBlock(w.params.GenesisBlock, scanner, accdb, true)
+		}
 	}
 
 	getHeight := height + 1
@@ -265,6 +300,10 @@ func (w *Wallet) rescanWallet(fromHeight uint32, keys ...*crypto.Curve25519Priva
 		w.connectBlock(blk, scanner, accdb, true)
 		if getHeight%10000 == 0 {
 			log.Debugf("Wallet rescanned to height %d", getHeight)
+		}
+
+		if w.mode.Is(ModeLite) {
+			break
 		}
 
 		if getHeight == w.chainHeight {
@@ -321,8 +360,11 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			}
 		}
 		for _, out := range tx.Outputs() {
-			if match, ok := matches[types.NewID(out.Commitment)]; ok {
-				accumulator.Insert(out.Commitment, true)
+			match, ok := matches[types.NewID(out.Commitment)]
+			if !w.mode.Is(ModeLite) {
+				accumulator.Insert(out.Commitment, ok)
+			}
+			if ok {
 				commitmentIndex := accumulator.NumElements() - 1
 
 				addrInfo, err := w.keychain.addrInfo(match.Key)
@@ -433,8 +475,6 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				walletIn += note.Amount
 				isOurs = true
 				log.Debugf("Wallet detected incoming output %s. Txid: %s in block %d", types.NewID(out.Commitment), tx.ID(), blk.Header.Height)
-			} else {
-				accumulator.Insert(out.Commitment, false)
 			}
 		}
 
@@ -471,10 +511,12 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 		if isOurs {
 			flushMode = blockchain.FlushRequired
 		}
-		if err := accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
-			log.Errorf("Wallet connect block error: %s", err)
+		if !w.mode.Is(ModeLite) {
+			if err := accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
+				log.Errorf("Wallet connect block error: %s", err)
+			}
 		}
-		if !isRescan {
+		if !isRescan && blk.Header.Height > 0 {
 			w.chainHeight = blk.Header.Height
 		}
 
@@ -496,7 +538,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				continue
 			}
 
-			if !isRescan {
+			if !isRescan && blk.Header.Height > 0 {
 				heightBytes := make([]byte, 32)
 				binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
 				if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
@@ -534,7 +576,26 @@ func (w *Wallet) Address() (Address, error) {
 }
 
 func (w *Wallet) NewAddress() (Address, error) {
-	return w.keychain.NewAddress()
+	addr, err := w.keychain.NewAddress()
+	if err != nil {
+		return nil, err
+	}
+
+	viewKey, err := w.keychain.ViewKey(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	curveKey, ok := viewKey.(*crypto.Curve25519PrivateKey)
+	if !ok {
+		return nil, errors.New("view key is not curve25519")
+	}
+
+	w.mtx.Lock()
+	w.scanner.AddKeys(curveKey)
+	w.mtx.Unlock()
+
+	return addr, nil
 }
 
 func (w *Wallet) TimelockedAddress(lockUntil time.Time) (Address, error) {
@@ -729,12 +790,17 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 	if err := w.keychain.ImportAddress(addr, unlockingScript, viewPrivkey); err != nil {
 		return err
 	}
+
+	w.mtx.Lock()
+	w.scanner.AddKeys(curveKey)
+	w.mtx.Unlock()
+
 	if rescan {
 		go func() {
 			if rescanHeight > 0 {
 				rescanHeight = rescanHeight - 1
 			}
-			if err := w.rescanWallet(rescanHeight, curveKey); err != nil {
+			if err := w.rescanWallet(rescanHeight); err != nil {
 				log.Errorf("rescan wallet error: %s", err)
 			}
 		}()
@@ -743,21 +809,30 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 }
 
 func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error) {
-	acc := w.accdb.Accumulator()
-
-	proofs := make([]*blockchain.InclusionProof, 0, len(commitments))
-	for _, commitment := range commitments {
-		proof, err := acc.GetProof(commitment[:])
-		if err != nil {
-			return nil, types.ID{}, fmt.Errorf("err fetching inclusion proof: %s", err)
+	if w.mode.Is(ModeLite) {
+		cc, ok := w.chainClient.(*client.LiteClient)
+		if !ok {
+			return nil, types.ID{}, errors.New("chain client is not type LiteClient")
 		}
-		proofs = append(proofs, proof)
+		return cc.GetInclusionProofs(commitments...)
+	} else {
+		proofs := make([]*blockchain.InclusionProof, 0, len(commitments))
+		acc := w.accdb.Accumulator()
+		for _, commitment := range commitments {
+			proof, err := acc.GetProof(commitment[:])
+			if err != nil {
+				return nil, types.ID{}, fmt.Errorf("err fetching inclusion proof: %s", err)
+			}
+			proofs = append(proofs, proof)
+		}
+		return proofs, acc.Root(), nil
 	}
-	return proofs, acc.Root(), nil
 }
 
 func (w *Wallet) Close() {
 	close(w.done)
+	w.chainClient.Close()
+
 	heightBytes := make([]byte, 32)
 	binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
 	if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {

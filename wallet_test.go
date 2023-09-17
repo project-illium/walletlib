@@ -15,6 +15,7 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
+	"github.com/project-illium/walletlib/client"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
@@ -51,7 +52,7 @@ func TestWallet(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		BlockchainSource(&InternalClient{
+		BlockchainSource(&client.InternalClient{
 			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
 			GetBlockFunc:  func(height uint32) (*blocks.Block, error) { return nil, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
@@ -150,7 +151,7 @@ func TestWallet(t *testing.T) {
 	assert.Len(t, txs, 2)
 
 	// Import and rescan
-	w.chainClient.(*InternalClient).GetBlockFunc = func(height uint32) (*blocks.Block, error) {
+	w.chainClient.(*client.InternalClient).GetBlockFunc = func(height uint32) (*blocks.Block, error) {
 		if height == 1 {
 			return blk1, nil
 		} else if height == 2 {
@@ -180,7 +181,7 @@ func TestTransactions(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		BlockchainSource(&InternalClient{
+		BlockchainSource(&client.InternalClient{
 			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
 			GetBlockFunc:  func(height uint32) (*blocks.Block, error) { return nil, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
@@ -242,7 +243,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		BlockchainSource(&InternalClient{
+		BlockchainSource(&client.InternalClient{
 			BroadcastFunc: func(tx *transactions.Transaction) error {
 				go func() { broadcastChan <- tx }()
 				return nil

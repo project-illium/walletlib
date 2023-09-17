@@ -370,6 +370,20 @@ func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
 	return keys, nil
 }
 
+func (kc *Keychain) ViewKey(addr Address) (crypto.PrivKey, error) {
+	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()))
+	if err != nil {
+		return nil, err
+	}
+
+	var addrInfo pb.AddrInfo
+	if err := proto.Unmarshal(ser, &addrInfo); err != nil {
+		return nil, err
+	}
+
+	return crypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
+}
+
 func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.UnlockingScript, viewPrivkey crypto.PrivKey) error {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
