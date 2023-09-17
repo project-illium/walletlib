@@ -13,9 +13,9 @@ import (
 
 // BlockchainClient is an interfaced used by the wallet to fetch data about the blockchain.
 // This can come from an internal library (see InternalClient) or an external node (see
-// RPCClient).
+// RPCClient or LiteClient).
 type BlockchainClient interface {
-	// IsFullClient returns whether this client is a full client (on that downloads and
+	// IsFullClient returns whether this client is a full client (one that downloads and
 	// scans all blocks) or a lite client (one that outsources block scanning to a
 	// server).
 	//
