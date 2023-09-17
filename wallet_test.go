@@ -321,6 +321,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Spend
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
 	assert.NoError(t, err)
 
@@ -350,6 +351,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Spend
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
 	assert.NoError(t, err)
 
@@ -364,6 +366,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Spend
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
 	assert.NoError(t, err)
 
@@ -378,6 +381,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Sweep
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.SweepWallet(addr, types.Amount(10))
 	assert.NoError(t, err)
 

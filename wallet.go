@@ -60,7 +60,9 @@ type Wallet struct {
 func NewWallet(opts ...Option) (*Wallet, error) {
 	var cfg config
 	for _, opt := range opts {
-		opt(&cfg)
+		if err := opt(&cfg); err != nil {
+			return nil, err
+		}
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
