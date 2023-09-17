@@ -6,7 +6,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
@@ -31,7 +30,7 @@ type LiteClient struct {
 	done             context.CancelFunc
 }
 
-func NewLiteClient(serverAddr, rpcCertPath, authToken string, viewKey *icrypto.Curve25519PrivateKey) (*LiteClient, error) {
+func NewLiteClient(serverAddr, rpcCertPath, authToken string, viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) (*LiteClient, error) {
 	certFile := repo.CleanAndExpandPath(rpcCertPath)
 
 	var (
@@ -66,14 +65,29 @@ func NewLiteClient(serverAddr, rpcCertPath, authToken string, viewKey *icrypto.C
 	}
 
 	ctx, done := context.WithCancel(context.Background())
+
+	wsClient := pb.NewWalletServerServiceClient(conn)
+	_, err = wsClient.RegisterViewKey(makeContext(ctx, authToken), &pb.RegisterViewKeyRequest{
+		ViewKey:                   keyBytes,
+		SerializedUnlockingScript: ul.Serialize(),
+		Birthday:                  walletBirthday,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &LiteClient{
 		blockchainClient: pb.NewBlockchainServiceClient(conn),
-		wsClient:         pb.NewWalletServerServiceClient(conn),
+		wsClient:         wsClient,
 		viewKeyBytes:     keyBytes,
 		authToken:        authToken,
 		ctx:              ctx,
 		done:             done,
 	}, nil
+}
+
+func (c *LiteClient) IsFullClient() bool {
+	return false
 }
 
 func (c *LiteClient) Broadcast(tx *transactions.Transaction) error {
@@ -104,7 +118,7 @@ func (c *LiteClient) GetBlocks(from, to uint32) ([]*blocks.Block, error) {
 }
 
 func (c *LiteClient) GetAccumulatorCheckpoint(height uint32) (*blockchain.Accumulator, uint32, error) {
-	return nil, 0, errors.New("unimplemented")
+	return nil, 0, ErrUnimplemented
 }
 
 func (c *LiteClient) SubscribeBlocks() (<-chan *blocks.Block, error) {

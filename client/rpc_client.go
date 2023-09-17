@@ -67,6 +67,10 @@ func NewRPCClient(serverAddr, rpcCertPath, authToken string) (*RPCClient, error)
 	}, nil
 }
 
+func (c *RPCClient) IsFullClient() bool {
+	return true
+}
+
 func (c *RPCClient) Broadcast(tx *transactions.Transaction) error {
 	_, err := c.client.SubmitTransaction(makeContext(c.ctx, c.authToken), &pb.SubmitTransactionRequest{
 		Transaction: tx,
@@ -97,6 +101,10 @@ func (c *RPCClient) GetAccumulatorCheckpoint(height uint32) (*blockchain.Accumul
 		return nil, 0, err
 	}
 	return blockchain.NewAccumulatorFromData(resp.Accumulator, resp.NumEntries), resp.Height, nil
+}
+
+func (c *RPCClient) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error) {
+	return nil, types.ID{}, ErrUnimplemented
 }
 
 func (c *RPCClient) SubscribeBlocks() (<-chan *blocks.Block, error) {

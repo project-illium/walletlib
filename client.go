@@ -6,6 +6,7 @@ package walletlib
 
 import (
 	"github.com/project-illium/ilxd/blockchain"
+	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
 )
@@ -14,6 +15,17 @@ import (
 // This can come from an internal library (see InternalClient) or an external node (see
 // RPCClient).
 type BlockchainClient interface {
+	// IsFullClient returns whether this client is a full client (on that downloads and
+	// scans all blocks) or a lite client (one that outsources block scanning to a
+	// server).
+	//
+	// If True GetAccumulatorCheckpoint will be implemented and GetInclusionProofs will be
+	// unimplemented.
+	//
+	// If False GetInclusionProofs will be implemented and GetAccumulatorCheckpoint will be
+	// unimplemented.
+	IsFullClient() bool
+
 	// Broadcast must broadcast the transaction to the illium network
 	Broadcast(tx *transactions.Transaction) error
 
@@ -22,7 +34,14 @@ type BlockchainClient interface {
 
 	// GetAccumulatorCheckpoint must return an accumulator checkpoint at the
 	// nearest prior height along with the actual height of the checkpoint.
+	//
+	// // This should only be implemented if IsFullClient returns True.
 	GetAccumulatorCheckpoint(height uint32) (*blockchain.Accumulator, uint32, error)
+
+	// GetInclusionProofs returns the inclusion proofs for the given commitments.
+	//
+	// This should only be implemented if IsFullClient returns False.
+	GetInclusionProofs(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error)
 
 	// SubscribeBlocks must return a channel upon which new blocks are passed
 	// when they are finalized.

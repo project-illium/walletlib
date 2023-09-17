@@ -23,7 +23,6 @@ import (
 	"github.com/project-illium/ilxd/repo/mock"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
-	"github.com/project-illium/walletlib/client"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"go.uber.org/zap"
@@ -39,18 +38,6 @@ const (
 	maxBatchSize        = 2000
 )
 
-type Mode int
-
-func (m Mode) Is(mode Mode) bool {
-	return mode == m
-}
-
-const (
-	ModeLib  Mode = 1
-	ModeRPC  Mode = 2
-	ModeLite Mode = 3
-)
-
 type Wallet struct {
 	ds          repo.Datastore
 	params      *params.NetworkParams
@@ -63,7 +50,6 @@ type Wallet struct {
 	chainHeight uint32
 	rescan      uint32
 	newWallet   bool
-	mode        Mode
 
 	done chan struct{}
 	mtx  sync.RWMutex
@@ -159,16 +145,6 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		log = zap.S()
 	}
 
-	var mode Mode
-	switch cfg.chainClient.(type) {
-	case *client.InternalClient:
-		mode = ModeLib
-	case *client.RPCClient:
-		mode = ModeRPC
-	case *client.LiteClient:
-		mode = ModeLite
-	}
-
 	return &Wallet{
 		ds:          ds,
 		params:      cfg.params,
@@ -180,7 +156,6 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainHeight: height,
 		scanner:     NewTransactionScanner(viewKeys...),
 		newWallet:   newWallet,
-		mode:        mode,
 		done:        make(chan struct{}),
 		mtx:         sync.RWMutex{},
 	}, nil
@@ -213,7 +188,7 @@ func (w *Wallet) Start() {
 			}
 		}
 
-		if w.mode.Is(ModeLite) {
+		if !w.chainClient.IsFullClient() {
 			break
 		}
 	}
@@ -235,7 +210,7 @@ func (w *Wallet) Start() {
 					continue
 				}
 				w.mtx.Lock()
-				if blk.Header.Height > w.chainHeight+1 && !w.mode.Is(ModeLite) {
+				if blk.Header.Height > w.chainHeight+1 && w.chainClient.IsFullClient() {
 					for {
 						from := w.chainHeight + 1
 						blks, err := w.chainClient.GetBlocks(from, blk.Header.Height-1)
@@ -286,7 +261,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 		checkpoint *blockchain.Accumulator
 	)
 
-	if !w.mode.Is(ModeLite) {
+	if w.chainClient.IsFullClient() {
 		checkpoint, height, err = w.chainClient.GetAccumulatorCheckpoint(fromHeight)
 		if err != nil && !errors.Is(err, blockchain.ErrNoCheckpoint) {
 			return err
@@ -314,7 +289,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 			if blk.Header.Height%10000 == 0 {
 				log.Debugf("Wallet rescanned to height %d", getHeight)
 			}
-			if w.mode.Is(ModeLite) {
+			if !w.chainClient.IsFullClient() {
 				w.mtx.Unlock()
 				break
 			}
@@ -375,7 +350,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 		}
 		for _, out := range tx.Outputs() {
 			match, ok := matches[types.NewID(out.Commitment)]
-			if !w.mode.Is(ModeLite) {
+			if w.chainClient.IsFullClient() {
 				accumulator.Insert(out.Commitment, ok)
 			}
 			if ok {
@@ -525,7 +500,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 		if isOurs {
 			flushMode = blockchain.FlushRequired
 		}
-		if !w.mode.Is(ModeLite) {
+		if w.chainClient.IsFullClient() {
 			if err := accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
 				log.Errorf("Wallet connect block error: %s", err)
 			}
@@ -590,6 +565,9 @@ func (w *Wallet) Address() (Address, error) {
 }
 
 func (w *Wallet) NewAddress() (Address, error) {
+	if !w.chainClient.IsFullClient() {
+		return nil, errors.New("lite client mode does not support the use multiple addresses")
+	}
 	addr, err := w.keychain.NewAddress()
 	if err != nil {
 		return nil, err
@@ -786,6 +764,10 @@ func (w *Wallet) Stake(commitments []types.ID) error {
 }
 
 func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
+	if !w.chainClient.IsFullClient() {
+		return errors.New("lite client mode does not support address importing")
+	}
+
 	if unlockingScript.Hash() != addr.ScriptHash() {
 		return errors.New("unlocking script does not match address")
 	}
@@ -823,13 +805,7 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 }
 
 func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.InclusionProof, types.ID, error) {
-	if w.mode.Is(ModeLite) {
-		cc, ok := w.chainClient.(*client.LiteClient)
-		if !ok {
-			return nil, types.ID{}, errors.New("chain client is not type LiteClient")
-		}
-		return cc.GetInclusionProofs(commitments...)
-	} else {
+	if w.chainClient.IsFullClient() {
 		proofs := make([]*blockchain.InclusionProof, 0, len(commitments))
 		acc := w.accdb.Accumulator()
 		for _, commitment := range commitments {
@@ -840,6 +816,8 @@ func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.Incl
 			proofs = append(proofs, proof)
 		}
 		return proofs, acc.Root(), nil
+	} else {
+		return w.chainClient.GetInclusionProofs(commitments...)
 	}
 }
 
