@@ -10,6 +10,7 @@ import (
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
 	"go.uber.org/zap"
+	"time"
 )
 
 // Option is configuration option function for the blockchain
@@ -61,35 +62,26 @@ func FeePerKB(fpkb types.Amount) Option {
 	}
 }
 
-// BroadcastFunction is a function to broadcast a transaction to the
-// network.
+// BlockchainSource is an implementation of the BlockchainClient that provides
+// access to blockchain data.
 //
-// This function is not optional.
-func BroadcastFunction(broadcast BroadcastFunc) Option {
+// This is not optional.
+func BlockchainSource(client BlockchainClient) Option {
 	return func(cfg *config) error {
-		cfg.broadcastFunc = broadcast
+		cfg.chainClient = client
 		return nil
 	}
 }
 
-// GetBlockFunction is a function to fetch a block from the chain
-// given the height.
+// Birthday sets the birthday of this wallet. This should be used by LiteClients
+// when restoring from seed. Otherwise, it is not needed.
 //
-// This function is not optional.
-func GetBlockFunction(getBlock GetBlockFunc) Option {
+// Note: use MinBirthday or later if you want to restore from seed, NOT a zero timestamp.
+// A timestamp less than MinBirthday is not considered valid and will not trigger
+// a rescan.
+func Birthday(birthday time.Time) Option {
 	return func(cfg *config) error {
-		cfg.getBlockFunc = getBlock
-		return nil
-	}
-}
-
-// GetAccumulatorCheckpointFunction is a function to fetch an accumulator checkpoint
-// from the blockchain.
-//
-// This function is not optional.
-func GetAccumulatorCheckpointFunction(getAccFunc GetAccumulatorCheckpointFunc) Option {
-	return func(cfg *config) error {
-		cfg.getAccFunc = getAccFunc
+		cfg.birthday = birthday
 		return nil
 	}
 }
@@ -103,15 +95,14 @@ func Logger(logger *zap.SugaredLogger) Option {
 }
 
 type config struct {
-	datastore     repo.Datastore
-	params        *params.NetworkParams
-	feePerKB      types.Amount
-	broadcastFunc BroadcastFunc
-	getBlockFunc  GetBlockFunc
-	getAccFunc    GetAccumulatorCheckpointFunc
-	logger        *zap.SugaredLogger
-	dataDir       string
-	mnemonic      string
+	datastore   repo.Datastore
+	params      *params.NetworkParams
+	feePerKB    types.Amount
+	chainClient BlockchainClient
+	logger      *zap.SugaredLogger
+	dataDir     string
+	mnemonic    string
+	birthday    time.Time
 }
 
 func (c *config) validate() error {
@@ -121,14 +112,8 @@ func (c *config) validate() error {
 	if c.dataDir == "" {
 		return errors.New("dataDir cannot be empty")
 	}
-	if c.broadcastFunc == nil {
-		return errors.New("broadcastfunc cannot be nil")
-	}
-	if c.getBlockFunc == nil {
-		return errors.New("getBlockFunc cannot be nil")
-	}
-	if c.getAccFunc == nil {
-		return errors.New("getAccFunc cannot be nil")
+	if c.chainClient == nil {
+		return errors.New("BlockchainClient cannot be nil")
 	}
 	return nil
 }

@@ -251,7 +251,7 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 	}
 
 	var inputSource InputSource
-	if inputs == nil || len(inputs) == 0 {
+	if len(inputs) == 0 {
 		inputSource = func(amount types.Amount) (types.Amount, []*pb.SpendNote, error) {
 			results, err := w.ds.Query(context.Background(), query.Query{
 				Prefix: NotesDatastoreKeyPrefix,

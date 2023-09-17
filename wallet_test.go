@@ -15,6 +15,7 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
+	"github.com/project-illium/walletlib/client"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
@@ -51,11 +52,13 @@ func TestWallet(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
-		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
-			return nil, 0, blockchain.ErrNoCheckpoint
+		BlockchainSource(&client.InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
 		}),
-		BroadcastFunction(func(tx *transactions.Transaction) error { return nil }),
 		Params(&params.RegestParams),
 	}...)
 	assert.NoError(t, err)
@@ -148,13 +151,24 @@ func TestWallet(t *testing.T) {
 	assert.Len(t, txs, 2)
 
 	// Import and rescan
-	w.getBlocksFunc = func(height uint32) (*blocks.Block, error) {
-		if height == 1 {
-			return blk1, nil
-		} else if height == 2 {
-			return blk2, nil
+	w.chainClient.(*client.InternalClient).GetBlocksFunc = func(from, to uint32) ([]*blocks.Block, error) {
+		var ret []*blocks.Block
+		switch from {
+		case 1:
+			ret = append(ret, blk1)
+		case 2:
+			ret = append(ret, blk2)
+		case 3:
+			ret = append(ret, blk3)
 		}
-		return blk3, nil
+		if from == 1 && to == 2 {
+			ret = append(ret, blk2)
+		} else if from == 1 && to == 3 {
+			ret = append(ret, blk2, blk3)
+		} else if from == 2 && to == 3 {
+			ret = append(ret, blk3)
+		}
+		return ret, nil
 	}
 
 	assert.NoError(t, w.ImportAddress(addr, unlockingScript, viewPriv, true, 1))
@@ -178,11 +192,13 @@ func TestTransactions(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
-		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
-			return nil, 0, blockchain.ErrNoCheckpoint
+		BlockchainSource(&client.InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
 		}),
-		BroadcastFunction(func(tx *transactions.Transaction) error { return nil }),
 		Params(&params.RegestParams),
 	}...)
 	assert.NoError(t, err)
@@ -238,13 +254,15 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	w, err := NewWallet([]Option{
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
-		GetBlockFunction(func(height uint32) (*blocks.Block, error) { return nil, nil }),
-		GetAccumulatorCheckpointFunction(func(height uint32) (*blockchain.Accumulator, uint32, error) {
-			return nil, 0, blockchain.ErrNoCheckpoint
-		}),
-		BroadcastFunction(func(tx *transactions.Transaction) error {
-			go func() { broadcastChan <- tx }()
-			return nil
+		BlockchainSource(&client.InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error {
+				go func() { broadcastChan <- tx }()
+				return nil
+			},
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
 		}),
 		Params(&params.RegestParams),
 	}...)
@@ -303,6 +321,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Spend
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
 	assert.NoError(t, err)
 
@@ -332,6 +351,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Spend
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
 	assert.NoError(t, err)
 
@@ -346,6 +366,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Spend
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.Spend(addr, types.Amount(900000), types.Amount(10))
 	assert.NoError(t, err)
 
@@ -360,6 +381,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	// Sweep
 	addr, _, _, err = mockAddress()
+	assert.NoError(t, err)
 	_, err = w.SweepWallet(addr, types.Amount(10))
 	assert.NoError(t, err)
 

@@ -36,6 +36,10 @@ func TestTransactionScanner(t *testing.T) {
 	}
 
 	scanner := NewTransactionScanner(priv.(*crypto.Curve25519PrivateKey))
+	assert.Len(t, scanner.keys, 1)
+
+	scanner.AddKeys(priv.(*crypto.Curve25519PrivateKey))
+	assert.Len(t, scanner.keys, 1)
 
 	matches := scanner.ScanOutputs(&blocks.Block{
 		Transactions: []*transactions.Transaction{
@@ -100,4 +104,7 @@ func TestTransactionScanner(t *testing.T) {
 			assert.False(t, ok)
 		}
 	}
+
+	scanner.RemoveKey(priv.(*crypto.Curve25519PrivateKey))
+	assert.Len(t, scanner.keys, 0)
 }

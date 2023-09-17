@@ -50,7 +50,15 @@ func (s *TransactionScanner) AddKeys(keys ...*crypto.Curve25519PrivateKey) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.keys = append(s.keys, keys...)
+keyLoop:
+	for _, k := range keys {
+		for _, key := range s.keys {
+			if k.Equals(key) {
+				continue keyLoop
+			}
+		}
+		s.keys = append(s.keys, k)
+	}
 }
 
 // RemoveKey removes scan keys from the TransactionScanner
@@ -60,7 +68,7 @@ func (s *TransactionScanner) RemoveKey(key *crypto.Curve25519PrivateKey) {
 
 	for i, k := range s.keys {
 		if k.Equals(key) {
-			slices.Delete(s.keys, i, i+1)
+			s.keys = slices.Delete(s.keys, i, i+1)
 		}
 	}
 }
