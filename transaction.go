@@ -180,6 +180,9 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 		if time.Unix(note.LockedUntil, 0).After(time.Now()) {
 			continue
 		}
+		if note.WatchOnly {
+			continue
+		}
 		notes = append(notes, &note)
 	}
 
