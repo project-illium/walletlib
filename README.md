@@ -1,5 +1,5 @@
-[![Go](https://github.com/project-illium/walletlib/actions/workflows/go.yml/badge.svg)](https://github.com/project-illium/walletlib/actions/workflows/go.yml)
-[![golangci-lint](https://github.com/project-illium/walletliib/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/project-illium/walletlib/actions/workflows/golangci-lint.yml)
+[![Go](https://github.com/project-illium/walletlib/actions/workflows/go.yaml/badge.svg)](https://github.com/project-illium/walletlib/actions/workflows/go.yaml)
+[![golangci-lint](https://github.com/project-illium/walletlib/actions/workflows/golangci-lint.yaml/badge.svg)](https://github.com/project-illium/walletlib/actions/workflows/golangci-lint.yaml)
 
 # walletlib
 illium wallet library
