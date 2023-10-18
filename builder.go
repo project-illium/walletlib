@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const DefaultLocktimePrecision = 60 * 20
+
 type RawTransaction struct {
 	Tx             *transactions.Transaction
 	PrivateInputs  []standard.PrivateInput
@@ -47,7 +49,10 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 	}
 
 	standardTx := &transactions.StandardTransaction{
-		Locktime: time.Now().Unix(),
+		Locktime: &transactions.Locktime{
+			Timestamp: time.Now().Unix(),
+			Precision: DefaultLocktimePrecision,
+		},
 	}
 
 	// First calculate the out amount
@@ -132,8 +137,11 @@ func BuildSweepTransaction(toAddr Address, inputNotes []*pb.SpendNote, fetchProo
 
 	fee := ComputeFee(len(inputNotes), 1, feePerKB)
 	standardTx := &transactions.StandardTransaction{
-		Fee:      uint64(fee),
-		Locktime: time.Now().Unix(),
+		Fee: uint64(fee),
+		Locktime: &transactions.Locktime{
+			Timestamp: time.Now().Unix(),
+			Precision: DefaultLocktimePrecision,
+		},
 	}
 
 	totalIn := types.Amount(0)

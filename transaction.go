@@ -463,7 +463,6 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 		Amount:       inputNote.Amount,
 		Nullifier:    nullifier[:],
 		TxoRoot:      root[:],
-		Locktime:     time.Now().Unix(),
 	}
 
 	sigHash, err := stakeTx.SigHash()
@@ -555,7 +554,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 		Amount:       note.Amount,
 		Nullifier:    nullifier[:],
 		TxoRoot:      txoRoot[:],
-		Locktime:     note.LockedUntil,
+		LockedUntil:  note.LockedUntil,
 		Signature:    nil,
 		Proof:        nil,
 	}
@@ -584,11 +583,11 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	}
 
 	publicParams := &stake.PublicParams{
-		TXORoot:   txoRoot[:],
-		SigHash:   sigHash,
-		Amount:    note.Amount,
-		Nullifier: nullifier[:],
-		Locktime:  time.Unix(note.LockedUntil, 0),
+		TXORoot:     txoRoot[:],
+		SigHash:     sigHash,
+		Amount:      note.Amount,
+		Nullifier:   nullifier[:],
+		LockedUntil: time.Unix(note.LockedUntil, 0),
 	}
 
 	proof, err := zk.CreateSnark(stake.StakeCircuit, privateParams, publicParams)

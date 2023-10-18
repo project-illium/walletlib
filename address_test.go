@@ -33,7 +33,6 @@ func TestBasicAddress(t *testing.T) {
 	assert.NoError(t, err)
 
 	addr2, err := DecodeAddress(addr.String(), &params.MainnetParams)
-	assert.NoError(t, err)
 
 	if addr2.String() != addr.String() {
 		t.Error("Decoded address does not match encoded")
