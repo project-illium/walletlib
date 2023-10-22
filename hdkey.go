@@ -38,22 +38,21 @@ func (k *HDPrivateKey) Child(n uint32) (*HDPrivateKey, error) {
 
 	// New from seed does not actually mutate the seed/private key. Instead,
 	// it just appends the public key which it computes as point(sha512(seed))
-	priv := ed25519.NewKeyFromSeed(res[:ed25519.PrivateKeySize/2])
-	privKey, err := crypto.UnmarshalEd25519PrivateKey(priv)
+	var seed [32]byte
+	copy(seed[:], res[:32])
+	privKey, _, err := icrypto.NewNovaKeyFromSeed(seed)
 	if err != nil {
 		return nil, err
 	}
 	if _, ok := k.PrivKey.(*icrypto.Curve25519PrivateKey); ok {
-		// This function takes seed (which at this point is still the raw
-		// value from the hmac, and mutates it slightly for curve25519.
-		privKey, err = icrypto.Curve25519PrivateKeyFromEd25519(privKey)
+		privKey, _, err = icrypto.NewCurve25519KeyFromSeed(seed)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return &HDPrivateKey{
 		PrivKey:   privKey,
-		chaincode: res[ed25519.PrivateKeySize/2:],
+		chaincode: res[32:],
 	}, nil
 }
 

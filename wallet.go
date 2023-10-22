@@ -803,6 +803,8 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 		return err
 	}
 
+	//FIXME: make sure view key not already in use.
+
 	w.mtx.Lock()
 	w.scanner.AddKeys(curveKey)
 	w.mtx.Unlock()
