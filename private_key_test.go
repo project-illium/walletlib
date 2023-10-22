@@ -6,14 +6,13 @@ package walletlib
 
 import (
 	"crypto/rand"
-	"github.com/libp2p/go-libp2p/core/crypto"
 	lcrypto "github.com/project-illium/ilxd/crypto"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
 func TestEncodeDecodePrivateKey(t *testing.T) {
-	spendKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	spendKey, _, err := lcrypto.GenerateNovaKey(rand.Reader)
 	assert.NoError(t, err)
 	spendRaw, err := spendKey.Raw()
 	assert.NoError(t, err)
