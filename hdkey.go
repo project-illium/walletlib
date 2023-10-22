@@ -9,6 +9,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha512"
 	"encoding/binary"
+	"errors"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	icrypto "github.com/project-illium/ilxd/crypto"
 )
@@ -36,20 +37,33 @@ func (k *HDPrivateKey) Child(n uint32) (*HDPrivateKey, error) {
 	mac.Write(append(rawKey, nBytes...))
 	res := mac.Sum(nil)
 
-	// New from seed does not actually mutate the seed/private key. Instead,
-	// it just appends the public key which it computes as point(sha512(seed))
-	var seed [32]byte
+	var (
+		seed    [32]byte
+		privKey crypto.PrivKey
+	)
 	copy(seed[:], res[:32])
-	privKey, _, err := icrypto.NewNovaKeyFromSeed(seed)
-	if err != nil {
-		return nil, err
-	}
-	if _, ok := k.PrivKey.(*icrypto.Curve25519PrivateKey); ok {
+
+	switch k.PrivKey.Type() {
+	case icrypto.Libp2pKeyTypeNova:
+		privKey, _, err = icrypto.NewNovaKeyFromSeed(seed)
+		if err != nil {
+			return nil, err
+		}
+	case icrypto.Libp2pKeyTypeCurve25519:
 		privKey, _, err = icrypto.NewCurve25519KeyFromSeed(seed)
 		if err != nil {
 			return nil, err
 		}
+	case crypto.Ed25519:
+		priv := ed25519.NewKeyFromSeed(seed[:])
+		privKey, err = crypto.UnmarshalEd25519PrivateKey(priv)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New("unknown HDKey private key type")
 	}
+
 	return &HDPrivateKey{
 		PrivKey:   privKey,
 		chaincode: res[32:],
@@ -78,8 +92,11 @@ func seedToNetworkKey(seed []byte) (*HDPrivateKey, error) {
 func seedToSpendMaster(seed []byte) (*HDPrivateKey, error) {
 	mac := hmac.New(sha512.New, []byte(SpendMasterKeyMacCode))
 	res := mac.Sum(seed)
-	sk := ed25519.NewKeyFromSeed(res[:ed25519.SeedSize])
-	privKey, err := crypto.UnmarshalEd25519PrivateKey(sk)
+
+	var novaSeed [32]byte
+	copy(novaSeed[:], res[:32])
+
+	privKey, _, err := icrypto.NewNovaKeyFromSeed(novaSeed)
 	if err != nil {
 		return nil, err
 	}
@@ -92,11 +109,11 @@ func seedToSpendMaster(seed []byte) (*HDPrivateKey, error) {
 func seedToViewMaster(seed []byte) (*HDPrivateKey, error) {
 	mac := hmac.New(sha512.New, []byte(ViewMasterKeyMacCode))
 	res := mac.Sum(seed)
-	privKey, err := crypto.UnmarshalEd25519PrivateKey(res[:ed25519.PrivateKeySize])
-	if err != nil {
-		return nil, err
-	}
-	privKey, err = icrypto.Curve25519PrivateKeyFromEd25519(privKey)
+
+	var curveSeed [32]byte
+	copy(curveSeed[:], res[:32])
+
+	privKey, _, err := icrypto.NewCurve25519KeyFromSeed(curveSeed)
 	if err != nil {
 		return nil, err
 	}
