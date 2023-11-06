@@ -566,6 +566,10 @@ func (w *Wallet) MnemonicSeed() (string, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
+	if w.keychain.isEncrypted {
+		return "", ErrEncryptedKeychain
+	}
+
 	mnemonic, err := w.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
 	if err != nil {
 		return "", err
