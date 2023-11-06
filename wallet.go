@@ -27,6 +27,7 @@ import (
 	"github.com/tyler-smith/go-bip39"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -47,14 +48,16 @@ type Wallet struct {
 	scanner     *TransactionScanner
 	accdb       *blockchain.AccumulatorDB
 	feePerKB    types.Amount
+	subs        map[uint64]*Subscription
 	chainClient BlockchainClient
 	chainHeight uint32
 	rescan      uint32
 	newWallet   bool
 	birthday    time.Time
 
-	done chan struct{}
-	mtx  sync.RWMutex
+	done   chan struct{}
+	mtx    sync.RWMutex
+	subMtx sync.RWMutex
 }
 
 func NewWallet(opts ...Option) (*Wallet, error) {
@@ -158,11 +161,13 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainClient: cfg.chainClient,
 		accdb:       adb,
 		chainHeight: height,
+		subs:        make(map[uint64]*Subscription),
 		scanner:     NewTransactionScanner(viewKeys...),
 		newWallet:   newWallet,
 		birthday:    cfg.birthday,
 		done:        make(chan struct{}),
 		mtx:         sync.RWMutex{},
+		subMtx:      sync.RWMutex{},
 	}, nil
 }
 
@@ -557,6 +562,15 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				amtStr = fmt.Sprintf("-%d", walletOut-walletIn)
 			}
 			log.Infof("New %s wallet transaction. Txid: %s, Coins: %s", direction, tx.ID(), amtStr)
+			w.subMtx.RLock()
+			for _, sub := range w.subs {
+				sub.C <- &WalletTransaction{
+					Txid:      tx.ID(),
+					AmountIn:  walletIn,
+					AmountOut: walletOut,
+				}
+			}
+			w.subMtx.RUnlock()
 		}
 	}
 	log.Debugf("Wallet processed block at height %d. Matched txs: %d", blk.Header.Height, matchedTxs)
@@ -841,6 +855,29 @@ func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.Incl
 	} else {
 		return w.chainClient.GetInclusionProofs(commitments...)
 	}
+}
+
+type Subscription struct {
+	C     chan *WalletTransaction
+	id    uint64
+	Close func()
+}
+
+// SubscribeTransactions returns a subscription to the stream of wallet transactions.
+func (w *Wallet) SubscribeTransactions() *Subscription {
+	sub := &Subscription{
+		C:  make(chan *WalletTransaction),
+		id: rand.Uint64(),
+	}
+	sub.Close = func() {
+		w.subMtx.Lock()
+		delete(w.subs, sub.id)
+		w.subMtx.Unlock()
+	}
+	w.subMtx.Lock()
+	w.subs[sub.id] = sub
+	w.subMtx.Unlock()
+	return sub
 }
 
 func (w *Wallet) Close() {
