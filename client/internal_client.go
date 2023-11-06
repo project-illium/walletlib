@@ -19,7 +19,7 @@ var ErrUnimplemented = errors.New("unimplemented method")
 // to satisfy the BlockchainClient interface.
 type InternalClient struct {
 	BroadcastFunc                func(tx *transactions.Transaction) error
-	GetBlocksFunc                func(from, to uint32) ([]*blocks.Block, error)
+	GetBlocksFunc                func(from, to uint32) ([]*blocks.Block, uint32, error)
 	GetAccumulatorCheckpointFunc func(height uint32) (*blockchain.Accumulator, uint32, error)
 	SubscribeBlocksFunc          func() (<-chan *blocks.Block, error)
 	CloseFunc                    func()
@@ -37,7 +37,7 @@ func (c *InternalClient) Broadcast(tx *transactions.Transaction) error {
 	return c.BroadcastFunc(tx)
 }
 
-func (c *InternalClient) GetBlocks(from, to uint32) ([]*blocks.Block, error) {
+func (c *InternalClient) GetBlocks(from, to uint32) ([]*blocks.Block, uint32, error) {
 	return c.GetBlocksFunc(from, to)
 }
 

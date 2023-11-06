@@ -48,16 +48,18 @@ type Wallet struct {
 	scanner     *TransactionScanner
 	accdb       *blockchain.AccumulatorDB
 	feePerKB    types.Amount
-	subs        map[uint64]*Subscription
+	txSubs      map[uint64]*TransactionSubscription
+	syncSubs    map[uint64]*SyncSubscription
 	chainClient BlockchainClient
 	chainHeight uint32
 	rescan      uint32
 	newWallet   bool
 	birthday    time.Time
 
-	done   chan struct{}
-	mtx    sync.RWMutex
-	subMtx sync.RWMutex
+	done       chan struct{}
+	mtx        sync.RWMutex
+	txSubMtx   sync.RWMutex
+	syncSubMtx sync.RWMutex
 }
 
 func NewWallet(opts ...Option) (*Wallet, error) {
@@ -161,13 +163,15 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainClient: cfg.chainClient,
 		accdb:       adb,
 		chainHeight: height,
-		subs:        make(map[uint64]*Subscription),
+		txSubs:      make(map[uint64]*TransactionSubscription),
+		syncSubs:    make(map[uint64]*SyncSubscription),
 		scanner:     NewTransactionScanner(viewKeys...),
 		newWallet:   newWallet,
 		birthday:    cfg.birthday,
 		done:        make(chan struct{}),
 		mtx:         sync.RWMutex{},
-		subMtx:      sync.RWMutex{},
+		txSubMtx:    sync.RWMutex{},
+		syncSubMtx:  sync.RWMutex{},
 	}, nil
 }
 
@@ -198,7 +202,7 @@ func (w *Wallet) Start() {
 
 	for {
 		from := w.chainHeight + 1
-		blks, err := w.chainClient.GetBlocks(from, from+maxBatchSize)
+		blks, bestHeight, err := w.chainClient.GetBlocks(from, from+maxBatchSize)
 		if err != nil {
 			break
 		}
@@ -207,6 +211,14 @@ func (w *Wallet) Start() {
 			if blk.Header.Height%10000 == 0 {
 				log.Debugf("Wallet synced to height %d", blk.Header.Height)
 			}
+			w.syncSubMtx.RLock()
+			for _, sub := range w.syncSubs {
+				sub.C <- &SyncNotification{
+					CurrentBlock: blk.Header.Height,
+					BestBlock:    bestHeight,
+				}
+			}
+			w.syncSubMtx.RUnlock()
 		}
 
 		if !w.chainClient.IsFullClient() {
@@ -234,7 +246,7 @@ func (w *Wallet) Start() {
 				if blk.Header.Height > w.chainHeight+1 && w.chainClient.IsFullClient() {
 					for {
 						from := w.chainHeight + 1
-						blks, err := w.chainClient.GetBlocks(from, blk.Header.Height-1)
+						blks, _, err := w.chainClient.GetBlocks(from, blk.Header.Height-1)
 						if err != nil {
 							log.Errorf("Error fetching blocks from chain client: %s", err)
 							continue loop
@@ -299,7 +311,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 	getHeight := height + 1
 	log.Debugf("Wallet rescan started at height: %d", getHeight)
 	for {
-		blks, err := w.chainClient.GetBlocks(getHeight, getHeight+maxBatchSize)
+		blks, bestHeight, err := w.chainClient.GetBlocks(getHeight, getHeight+maxBatchSize)
 		if err != nil {
 			break
 		}
@@ -325,6 +337,15 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 				return nil
 			}
 			getHeight = blk.Header.Height + 1
+
+			w.syncSubMtx.RLock()
+			for _, sub := range w.syncSubs {
+				sub.C <- &SyncNotification{
+					CurrentBlock: blk.Header.Height,
+					BestBlock:    bestHeight,
+				}
+			}
+			w.syncSubMtx.RUnlock()
 		}
 		w.mtx.Unlock()
 	}
@@ -562,15 +583,15 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				amtStr = fmt.Sprintf("-%d", walletOut-walletIn)
 			}
 			log.Infof("New %s wallet transaction. Txid: %s, Coins: %s", direction, tx.ID(), amtStr)
-			w.subMtx.RLock()
-			for _, sub := range w.subs {
+			w.txSubMtx.RLock()
+			for _, sub := range w.txSubs {
 				sub.C <- &WalletTransaction{
 					Txid:      tx.ID(),
 					AmountIn:  walletIn,
 					AmountOut: walletOut,
 				}
 			}
-			w.subMtx.RUnlock()
+			w.txSubMtx.RUnlock()
 		}
 	}
 	log.Debugf("Wallet processed block at height %d. Matched txs: %d", blk.Header.Height, matchedTxs)
@@ -857,26 +878,49 @@ func (w *Wallet) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.Incl
 	}
 }
 
-type Subscription struct {
+type TransactionSubscription struct {
 	C     chan *WalletTransaction
 	id    uint64
 	Close func()
 }
 
 // SubscribeTransactions returns a subscription to the stream of wallet transactions.
-func (w *Wallet) SubscribeTransactions() *Subscription {
-	sub := &Subscription{
+func (w *Wallet) SubscribeTransactions() *TransactionSubscription {
+	sub := &TransactionSubscription{
 		C:  make(chan *WalletTransaction),
 		id: rand.Uint64(),
 	}
 	sub.Close = func() {
-		w.subMtx.Lock()
-		delete(w.subs, sub.id)
-		w.subMtx.Unlock()
+		w.txSubMtx.Lock()
+		delete(w.txSubs, sub.id)
+		w.txSubMtx.Unlock()
 	}
-	w.subMtx.Lock()
-	w.subs[sub.id] = sub
-	w.subMtx.Unlock()
+	w.txSubMtx.Lock()
+	w.txSubs[sub.id] = sub
+	w.txSubMtx.Unlock()
+	return sub
+}
+
+type SyncSubscription struct {
+	C     chan *SyncNotification
+	id    uint64
+	Close func()
+}
+
+// SubscribeSyncNotifications returns a subscription to the stream of sync notifications.
+func (w *Wallet) SubscribeSyncNotifications() *SyncSubscription {
+	sub := &SyncSubscription{
+		C:  make(chan *SyncNotification),
+		id: rand.Uint64(),
+	}
+	sub.Close = func() {
+		w.syncSubMtx.Lock()
+		delete(w.syncSubs, sub.id)
+		w.syncSubMtx.Unlock()
+	}
+	w.syncSubMtx.Lock()
+	w.syncSubs[sub.id] = sub
+	w.syncSubMtx.Unlock()
 	return sub
 }
 
@@ -926,4 +970,9 @@ type WalletTransaction struct {
 	Txid      types.ID
 	AmountIn  types.Amount
 	AmountOut types.Amount
+}
+
+type SyncNotification struct {
+	CurrentBlock uint32
+	BestBlock    uint32
 }

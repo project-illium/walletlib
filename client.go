@@ -35,8 +35,9 @@ type BlockchainClient interface {
 	// Broadcast must broadcast the transaction to the illium network
 	Broadcast(tx *transactions.Transaction) error
 
-	// GetBlocks must return the blocks at the given height range or an error
-	GetBlocks(from, to uint32) ([]*blocks.Block, error)
+	// GetBlocks must return the blocks at the given height range and the height
+	// at the tip of the chain or an error
+	GetBlocks(from, to uint32) ([]*blocks.Block, uint32, error)
 
 	// GetAccumulatorCheckpoint must return an accumulator checkpoint at the
 	// nearest prior height along with the actual height of the checkpoint.

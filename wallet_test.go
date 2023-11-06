@@ -54,7 +54,7 @@ func TestWallet(t *testing.T) {
 		DataDir(repo.DefaultHomeDir),
 		BlockchainSource(&client.InternalClient{
 			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
-			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, uint32, error) { return nil, 0, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
 				return nil, 0, blockchain.ErrNoCheckpoint
 			},
@@ -151,7 +151,7 @@ func TestWallet(t *testing.T) {
 	assert.Len(t, txs, 2)
 
 	// Import and rescan
-	w.chainClient.(*client.InternalClient).GetBlocksFunc = func(from, to uint32) ([]*blocks.Block, error) {
+	w.chainClient.(*client.InternalClient).GetBlocksFunc = func(from, to uint32) ([]*blocks.Block, uint32, error) {
 		var ret []*blocks.Block
 		switch from {
 		case 1:
@@ -168,7 +168,7 @@ func TestWallet(t *testing.T) {
 		} else if from == 2 && to == 3 {
 			ret = append(ret, blk3)
 		}
-		return ret, nil
+		return ret, 3, nil
 	}
 
 	assert.NoError(t, w.ImportAddress(addr, unlockingScript, viewPriv, true, 1))
@@ -194,7 +194,7 @@ func TestTransactions(t *testing.T) {
 		DataDir(repo.DefaultHomeDir),
 		BlockchainSource(&client.InternalClient{
 			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
-			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, uint32, error) { return nil, 0, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
 				return nil, 0, blockchain.ErrNoCheckpoint
 			},
@@ -259,7 +259,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 				go func() { broadcastChan <- tx }()
 				return nil
 			},
-			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, error) { return nil, nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, uint32, error) { return nil, 0, nil },
 			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
 				return nil, 0, blockchain.ErrNoCheckpoint
 			},

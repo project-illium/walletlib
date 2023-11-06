@@ -83,19 +83,23 @@ func (c *RPCClient) Broadcast(tx *transactions.Transaction) error {
 	return err
 }
 
-func (c *RPCClient) GetBlocks(from, to uint32) ([]*blocks.Block, error) {
+func (c *RPCClient) GetBlocks(from, to uint32) ([]*blocks.Block, uint32, error) {
 	resp, err := c.client.GetCompressedBlocks(makeContext(c.ctx, c.authToken), &pb.GetCompressedBlocksRequest{
 		StartHeight: from,
 		EndHeight:   to,
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	bcInfo, err := c.client.GetBlockchainInfo(makeContext(c.ctx, c.authToken), &pb.GetBlockchainInfoRequest{})
+	if err != nil {
+		return nil, 0, err
 	}
 	ret := make([]*blocks.Block, 0, len(resp.Blocks))
 	for _, blk := range resp.Blocks {
 		ret = append(ret, compressedBlockToBlock(blk))
 	}
-	return ret, nil
+	return ret, bcInfo.BestHeight, nil
 }
 
 func (c *RPCClient) GetAccumulatorCheckpoint(height uint32) (*blockchain.Accumulator, uint32, error) {

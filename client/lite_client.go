@@ -96,7 +96,7 @@ func (c *LiteClient) Broadcast(tx *transactions.Transaction) error {
 	return err
 }
 
-func (c *LiteClient) GetBlocks(from, to uint32) ([]*blocks.Block, error) {
+func (c *LiteClient) GetBlocks(from, to uint32) ([]*blocks.Block, uint32, error) {
 	resp, err := c.wsClient.GetWalletTransactions(makeContext(c.ctx, c.authToken), &pb.GetWalletTransactionsRequest{
 		ViewKey: c.viewKeyBytes,
 		StartBlock: &pb.GetWalletTransactionsRequest_Height{
@@ -104,7 +104,7 @@ func (c *LiteClient) GetBlocks(from, to uint32) ([]*blocks.Block, error) {
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	blk := &blocks.Block{
 		Header: &blocks.BlockHeader{
@@ -113,7 +113,7 @@ func (c *LiteClient) GetBlocks(from, to uint32) ([]*blocks.Block, error) {
 		Transactions: resp.Transactions,
 	}
 
-	return []*blocks.Block{blk}, nil
+	return []*blocks.Block{blk}, resp.ChainHeight, nil
 }
 
 func (c *LiteClient) GetAccumulatorCheckpoint(height uint32) (*blockchain.Accumulator, uint32, error) {
