@@ -34,14 +34,14 @@ type scanWork struct {
 // hashes of the accuumulator for every block.
 type TransactionScanner struct {
 	keys []*crypto.Curve25519PrivateKey
-	mtx  sync.Mutex
+	mtx  sync.RWMutex
 }
 
 // NewTransactionScanner returns a new TransactionScanner
 func NewTransactionScanner(keys ...*crypto.Curve25519PrivateKey) *TransactionScanner {
 	return &TransactionScanner{
 		keys: keys,
-		mtx:  sync.Mutex{},
+		mtx:  sync.RWMutex{},
 	}
 }
 
@@ -75,8 +75,8 @@ func (s *TransactionScanner) RemoveKey(key *crypto.Curve25519PrivateKey) {
 
 // ScanOutputs attempts to decrypt the outputs using the keys and returns a map of matches
 func (s *TransactionScanner) ScanOutputs(blk *blocks.Block) map[types.ID]*ScanMatch {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
 
 	ret := make(map[types.ID]*ScanMatch)
 	if len(s.keys) == 0 {

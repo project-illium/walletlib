@@ -599,8 +599,8 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 }
 
 func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Address, networkKey crypto.PrivKey) (*transactions.Transaction, error) {
-	w.mtx.Lock()
-	defer w.mtx.Unlock()
+	w.mtx.RLock()
+	defer w.mtx.RUnlock()
 
 	var err error
 	if addr == nil {

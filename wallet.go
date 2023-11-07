@@ -249,6 +249,7 @@ func (w *Wallet) Start() {
 						blks, _, err := w.chainClient.GetBlocks(from, blk.Header.Height-1)
 						if err != nil {
 							log.Errorf("Error fetching blocks from chain client: %s", err)
+							w.mtx.Unlock()
 							continue loop
 						}
 						for _, b := range blks {
@@ -323,12 +324,12 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 				log.Debugf("Wallet rescanned to height %d", getHeight)
 			}
 			if !w.chainClient.IsFullClient() {
-				w.mtx.Unlock()
 				break
 			}
 
 			if blk.Header.Height == w.chainHeight {
 				if err := w.accdb.Commit(accdb.Accumulator(), w.chainHeight, blockchain.FlushRequired); err != nil {
+					w.mtx.Unlock()
 					return err
 				}
 				atomic.SwapUint32(&w.rescan, 0)
@@ -423,7 +424,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 				if note.Amount == 0 {
 					accumulator.DropProof(out.Commitment)
-					log.Error("Wallet connect block error: note amount is zero. Block height: %d: Addr: %s", blk.Header.Height, addrInfo.Addr)
+					log.Warnf("Wallet connect block error: note amount is zero. Block height: %d: Addr: %s", blk.Header.Height, addrInfo.Addr)
 					continue
 				}
 
@@ -892,6 +893,11 @@ func (w *Wallet) SubscribeTransactions() *TransactionSubscription {
 	}
 	sub.Close = func() {
 		w.txSubMtx.Lock()
+		go func() {
+			for range sub.C {
+			}
+		}()
+		close(sub.C)
 		delete(w.txSubs, sub.id)
 		w.txSubMtx.Unlock()
 	}
@@ -915,6 +921,11 @@ func (w *Wallet) SubscribeSyncNotifications() *SyncSubscription {
 	}
 	sub.Close = func() {
 		w.syncSubMtx.Lock()
+		go func() {
+			for range sub.C {
+			}
+		}()
+		close(sub.C)
 		delete(w.syncSubs, sub.id)
 		w.syncSubMtx.Unlock()
 	}
