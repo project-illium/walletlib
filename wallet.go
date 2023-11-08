@@ -767,13 +767,16 @@ func (w *Wallet) ChangeWalletPassphrase(currentPassphrase, newPassphrase string)
 }
 
 func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
+	fmt.Println(1)
 	tx, err := w.buildAndProveTransaction(toAddr, [128]byte{}, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
+	fmt.Println(2)
 	if err := w.chainClient.Broadcast(tx); err != nil {
 		return types.ID{}, err
 	}
+	fmt.Println(3)
 	return tx.ID(), nil
 }
 
