@@ -1036,7 +1036,7 @@ type TxIO struct {
 type Unknown struct{}
 
 func (u Unknown) MarshalJSON() ([]byte, error) {
-	return json.Marshal("Unknown")
+	return json.Marshal("unknown")
 }
 
 type SyncNotification struct {
