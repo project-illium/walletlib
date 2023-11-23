@@ -1082,7 +1082,7 @@ func pbIOtoIO(ios []*pb.WalletTransaction_IO, params *params.NetworkParams) ([]I
 			})
 		}
 		if io.GetUnknown() != nil {
-			ret = append(ret, Unknown{})
+			ret = append(ret, &Unknown{})
 		}
 	}
 	return ret, nil
