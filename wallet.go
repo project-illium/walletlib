@@ -42,20 +42,21 @@ const (
 )
 
 type Wallet struct {
-	ds          repo.Datastore
-	params      *params.NetworkParams
-	keychain    *Keychain
-	nullifiers  map[types.Nullifier]types.ID
-	scanner     *TransactionScanner
-	accdb       *blockchain.AccumulatorDB
-	feePerKB    types.Amount
-	txSubs      map[uint64]*TransactionSubscription
-	syncSubs    map[uint64]*SyncSubscription
-	chainClient BlockchainClient
-	chainHeight uint32
-	rescan      uint32
-	newWallet   bool
-	birthday    time.Time
+	ds             repo.Datastore
+	params         *params.NetworkParams
+	keychain       *Keychain
+	nullifiers     map[types.Nullifier]types.ID
+	outputMetadata map[types.ID]*TxIO
+	scanner        *TransactionScanner
+	accdb          *blockchain.AccumulatorDB
+	feePerKB       types.Amount
+	txSubs         map[uint64]*TransactionSubscription
+	syncSubs       map[uint64]*SyncSubscription
+	chainClient    BlockchainClient
+	chainHeight    uint32
+	rescan         uint32
+	newWallet      bool
+	birthday       time.Time
 
 	done       chan struct{}
 	mtx        sync.RWMutex
@@ -156,23 +157,24 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 	}
 
 	return &Wallet{
-		ds:          ds,
-		params:      cfg.params,
-		keychain:    keychain,
-		nullifiers:  nullifiers,
-		feePerKB:    fpkb,
-		chainClient: cfg.chainClient,
-		accdb:       adb,
-		chainHeight: height,
-		txSubs:      make(map[uint64]*TransactionSubscription),
-		syncSubs:    make(map[uint64]*SyncSubscription),
-		scanner:     NewTransactionScanner(viewKeys...),
-		newWallet:   newWallet,
-		birthday:    cfg.birthday,
-		done:        make(chan struct{}),
-		mtx:         sync.RWMutex{},
-		txSubMtx:    sync.RWMutex{},
-		syncSubMtx:  sync.RWMutex{},
+		ds:             ds,
+		params:         cfg.params,
+		keychain:       keychain,
+		nullifiers:     nullifiers,
+		outputMetadata: make(map[types.ID]*TxIO),
+		feePerKB:       fpkb,
+		chainClient:    cfg.chainClient,
+		accdb:          adb,
+		chainHeight:    height,
+		txSubs:         make(map[uint64]*TransactionSubscription),
+		syncSubs:       make(map[uint64]*SyncSubscription),
+		scanner:        NewTransactionScanner(viewKeys...),
+		newWallet:      newWallet,
+		birthday:       cfg.birthday,
+		done:           make(chan struct{}),
+		mtx:            sync.RWMutex{},
+		txSubMtx:       sync.RWMutex{},
+		syncSubMtx:     sync.RWMutex{},
 	}, nil
 }
 
@@ -534,7 +536,13 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				})
 				log.Debugf("Wallet detected incoming output %s. Txid: %s in block %d", types.NewID(out.Commitment), tx.ID(), blk.Header.Height)
 			} else {
-				outs = append(outs, &Unknown{})
+				txio, ok := w.outputMetadata[types.NewID(out.Commitment)]
+				if ok {
+					outs = append(outs, txio)
+					delete(w.outputMetadata, types.NewID(out.Commitment))
+				} else {
+					outs = append(outs, &Unknown{})
+				}
 			}
 		}
 
