@@ -363,6 +363,8 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			isOurs    bool
 			walletOut types.Amount
 			walletIn  types.Amount
+			ins       []IO
+			outs      []IO
 		)
 		for _, n := range tx.Nullifiers() {
 			if commitment, ok := w.nullifiers[n]; ok {
@@ -373,6 +375,11 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 				var note pb.SpendNote
 				if err := proto.Unmarshal(b, &note); err != nil {
+					log.Errorf("Wallet connect block error: %s", err)
+					continue
+				}
+				inAddr, err := DecodeAddress(note.Address, w.params)
+				if err != nil {
 					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
@@ -388,7 +395,13 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				delete(w.nullifiers, n)
 				isOurs = true
 				accumulator.DropProof(commitment.Bytes())
+				ins = append(ins, &TxIO{
+					Address: inAddr,
+					Amount:  types.Amount(note.Amount),
+				})
 				log.Debugf("Wallet detected spend of nullifier %s in block %d", n.String(), blk.Header.Height)
+			} else {
+				ins = append(ins, &Unknown{})
 			}
 		}
 		for _, out := range tx.Outputs() {
@@ -503,10 +516,24 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
+
+				addr, err := DecodeAddress(addrInfo.Addr, w.params)
+				if err != nil {
+					accumulator.DropProof(out.Commitment)
+					log.Errorf("Wallet connect block error: %s", err)
+					continue
+				}
+
 				w.nullifiers[nullifier] = types.NewID(out.Commitment)
 				walletIn += note.Amount
 				isOurs = true
+				outs = append(outs, &TxIO{
+					Address: addr,
+					Amount:  note.Amount,
+				})
 				log.Debugf("Wallet detected incoming output %s. Txid: %s in block %d", types.NewID(out.Commitment), tx.ID(), blk.Header.Height)
+			} else {
+				outs = append(outs, &Unknown{})
 			}
 		}
 
@@ -556,9 +583,11 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			matchedTxs++
 			txid := tx.ID()
 			wtx := &pb.WalletTransaction{
-				Txid:   txid[:],
-				AmtIn:  uint64(walletIn),
-				AmtOut: uint64(walletOut),
+				Txid:    txid[:],
+				AmtIn:   uint64(walletIn),
+				AmtOut:  uint64(walletOut),
+				Inputs:  ioToPBio(ins),
+				Outputs: ioToPBio(outs),
 			}
 			ser, err := proto.Marshal(wtx)
 			if err != nil {
@@ -590,6 +619,8 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					Txid:      tx.ID(),
 					AmountIn:  walletIn,
 					AmountOut: walletOut,
+					Inputs:    ins,
+					Outputs:   outs,
 				}
 			}
 			w.txSubMtx.RUnlock()
@@ -725,10 +756,20 @@ func (w *Wallet) Transactions() ([]*WalletTransaction, error) {
 		if err := proto.Unmarshal(result.Value, &wtx); err != nil {
 			return nil, err
 		}
+		inIO, err := pbIOtoIO(wtx.Inputs, w.params)
+		if err != nil {
+			return nil, err
+		}
+		outIO, err := pbIOtoIO(wtx.Outputs, w.params)
+		if err != nil {
+			return nil, err
+		}
 		txs = append(txs, &WalletTransaction{
 			Txid:      types.NewID(wtx.Txid),
 			AmountIn:  types.Amount(wtx.AmtIn),
 			AmountOut: types.Amount(wtx.AmtOut),
+			Inputs:    inIO,
+			Outputs:   outIO,
 		})
 	}
 	return txs, nil
@@ -981,9 +1022,63 @@ type WalletTransaction struct {
 	Txid      types.ID
 	AmountIn  types.Amount
 	AmountOut types.Amount
+
+	Inputs  []IO
+	Outputs []IO
 }
+
+type IO interface{}
+type TxIO struct {
+	Address Address
+	Amount  types.Amount
+}
+type Unknown struct{}
 
 type SyncNotification struct {
 	CurrentBlock uint32
 	BestBlock    uint32
+}
+
+func ioToPBio(ios []IO) []*pb.WalletTransaction_IO {
+	ret := make([]*pb.WalletTransaction_IO, 0, len(ios))
+	for _, io := range ios {
+		switch t := io.(type) {
+		case *TxIO:
+			ret = append(ret, &pb.WalletTransaction_IO{
+				IoType: &pb.WalletTransaction_IO_TxIo{
+					TxIo: &pb.WalletTransaction_IO_TxIO{
+						Address: t.Address.String(),
+						Amount:  uint64(t.Amount),
+					},
+				},
+			})
+		case *Unknown:
+			ret = append(ret, &pb.WalletTransaction_IO{
+				IoType: &pb.WalletTransaction_IO_Unknown_{
+					Unknown: &pb.WalletTransaction_IO_Unknown{},
+				},
+			})
+		}
+	}
+	return ret
+}
+
+func pbIOtoIO(ios []*pb.WalletTransaction_IO, params *params.NetworkParams) ([]IO, error) {
+	ret := make([]IO, 0, len(ios))
+	for _, io := range ios {
+		if io.GetTxIo() != nil {
+			addr, err := DecodeAddress(io.GetTxIo().Address, params)
+			if err != nil {
+				return nil, err
+			}
+			ret = append(ret, &TxIO{
+				Address: addr,
+				Amount:  types.Amount(io.GetTxIo().Amount),
+			})
+		}
+		if io.GetUnknown() != nil {
+			ret = append(ret, Unknown{})
+		}
+	}
+	return ret, nil
 }
