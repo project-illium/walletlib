@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ipfs/go-datastore"
@@ -1033,6 +1034,10 @@ type TxIO struct {
 	Amount  types.Amount
 }
 type Unknown struct{}
+
+func (u Unknown) MarshalJSON() ([]byte, error) {
+	return json.Marshal("Unknown")
+}
 
 type SyncNotification struct {
 	CurrentBlock uint32
