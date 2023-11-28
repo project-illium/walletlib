@@ -104,6 +104,15 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState [128]byte, amo
 		return nil, err
 	}
 
+	outCommitment := rawTx.Tx.Outputs()[0].Commitment
+	w.outputMetadata[types.NewID(outCommitment)] = &TxIO{
+		Address: toAddr,
+		Amount:  amount,
+	}
+
+	// Randomize input and output order
+	shuffleTransaction(rawTx)
+
 	// Sign the inputs
 	sigHash, err := rawTx.Tx.GetStandardTransaction().SigHash()
 	if err != nil {
@@ -368,7 +377,23 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 		changeSource = w.Address
 	}
 
-	return BuildTransaction(outputs, inputSource, changeSource, w.GetInclusionProofs, feePerKB)
+	rawTx, err := BuildTransaction(outputs, inputSource, changeSource, w.GetInclusionProofs, feePerKB)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, o := range rawTx.Tx.Outputs() {
+		if i < len(outputs) {
+			w.outputMetadata[types.NewID(o.Commitment)] = &TxIO{
+				Address: outputs[i].Addr,
+				Amount:  outputs[i].Amount,
+			}
+		}
+	}
+
+	// Randomize input and output order
+	shuffleTransaction(rawTx)
+	return rawTx, nil
 }
 
 func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error) {
