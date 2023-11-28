@@ -454,7 +454,12 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 							addrInfo.UnlockingScript.ScriptParams[0],
 						},
 					}
-					scriptHash := script.Hash()
+					scriptHash, err := script.Hash()
+					if err != nil {
+						accumulator.DropProof(out.Commitment)
+						log.Errorf("Err computing scriptHash: %s", err)
+						continue
+					}
 
 					if bytes.Equal(note.ScriptHash, scriptHash[:]) {
 						locktime = int64(binary.BigEndian.Uint64(note.State[:8]))
@@ -874,7 +879,11 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 		return errors.New("lite client mode does not support address importing")
 	}
 
-	if unlockingScript.Hash() != addr.ScriptHash() {
+	scriptHash, err := unlockingScript.Hash()
+	if err != nil {
+		return err
+	}
+	if scriptHash != addr.ScriptHash() {
 		return errors.New("unlocking script does not match address")
 	}
 	if !viewPrivkey.GetPublic().Equals(addr.ViewKey()) {
@@ -892,9 +901,7 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 	if err := w.keychain.ImportAddress(addr, unlockingScript, viewPrivkey); err != nil {
 		return err
 	}
-
-	//FIXME: make sure view key not already in use.
-
+	
 	w.mtx.Lock()
 	w.scanner.AddKeys(curveKey)
 	w.mtx.Unlock()

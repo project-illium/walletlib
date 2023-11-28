@@ -37,7 +37,10 @@ func NewBasicAddress(script types.UnlockingScript, viewKey crypto.PubKey, params
 		return nil, errors.New("viewKey must be of type Curve25519PublicKey")
 	}
 
-	h := script.Hash()
+	h, err := script.Hash()
+	if err != nil {
+		return nil, err
+	}
 	var h2 [32]byte
 	copy(h2[:], h[:])
 

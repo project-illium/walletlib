@@ -330,7 +330,10 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 						ScriptCommitment: in.PrivateInput.ScriptCommitment,
 						ScriptParams:     in.PrivateInput.ScriptParams,
 					}
-					scriptHash := us.Hash()
+					scriptHash, err := us.Hash()
+					if err != nil {
+						return 0, nil, err
+					}
 
 					if len(in.PrivateInput.ScriptParams) < 1 {
 						return 0, nil, errors.New("public key not found in private script params")
@@ -422,7 +425,10 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 			ScriptCommitment: in.PrivateInput.ScriptCommitment,
 			ScriptParams:     in.PrivateInput.ScriptParams,
 		}
-		scriptHash := us.Hash()
+		scriptHash, err := us.Hash()
+		if err != nil {
+			return nil, err
+		}
 
 		if len(in.PrivateInput.ScriptParams) < 1 {
 			return nil, errors.New("public key not found in private script params")
