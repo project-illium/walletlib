@@ -88,7 +88,10 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	scriptHash := unlockingScript.Hash()
+	scriptHash, err := unlockingScript.Hash()
+	if err != nil {
+		return nil, err
+	}
 
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
@@ -271,7 +274,10 @@ func (kc *Keychain) NewAddress() (Address, error) {
 	if err != nil {
 		return nil, err
 	}
-	scriptHash := unlockingScript.Hash()
+	scriptHash, err := unlockingScript.Hash()
+	if err != nil {
+		return nil, err
+	}
 
 	serializedKey, err := crypto.MarshalPrivateKey(viewKey)
 	if err != nil {
@@ -403,7 +409,10 @@ func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.UnlockingS
 		return errors.New("view key already exists in wallet")
 	}
 
-	scriptHash := unlockingScript.Hash()
+	scriptHash, err := unlockingScript.Hash()
+	if err != nil {
+		return err
+	}
 
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
