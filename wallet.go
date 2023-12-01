@@ -452,6 +452,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 							{0x01},
 							note.State[:8],
 							addrInfo.UnlockingScript.ScriptParams[0],
+							addrInfo.UnlockingScript.ScriptParams[1],
 						},
 					}
 					scriptHash, err := script.Hash()
@@ -901,7 +902,7 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScri
 	if err := w.keychain.ImportAddress(addr, unlockingScript, viewPrivkey); err != nil {
 		return err
 	}
-	
+
 	w.mtx.Lock()
 	w.scanner.AddKeys(curveKey)
 	w.mtx.Unlock()

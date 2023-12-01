@@ -26,17 +26,14 @@ func mockAddress() (Address, types.UnlockingScript, lcrypto.PrivKey, error) {
 	if err != nil {
 		return nil, types.UnlockingScript{}, nil, nil
 	}
-	_, spendKey, err := lcrypto.GenerateEd25519Key(rand.Reader)
+	_, spendKey, err := crypto.GenerateNovaKey(rand.Reader)
 	if err != nil {
 		return nil, types.UnlockingScript{}, nil, nil
 	}
-	rawSpend, err := spendKey.Raw()
-	if err != nil {
-		return nil, types.UnlockingScript{}, nil, nil
-	}
+	pubX, pubY := spendKey.(*crypto.NovaPublicKey).ToXY()
 	unlockingScript := types.UnlockingScript{
 		ScriptCommitment: MockBasicUnlockScriptCommitment,
-		ScriptParams:     [][]byte{rawSpend},
+		ScriptParams:     [][]byte{pubX, pubY},
 	}
 
 	addr, err := NewBasicAddress(unlockingScript, viewPub, &params.RegestParams)

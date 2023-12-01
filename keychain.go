@@ -37,8 +37,8 @@ var (
 	ErrPublicOnlyKeychain    = errors.New("keychain public only")
 	ErrPermissionDenied      = errors.New("permission denied")
 
-	MockBasicUnlockScriptCommitment        = bytes.Repeat([]byte{0xff}, 32)
-	MockTimelockedMultisigScriptCommitment = bytes.Repeat([]byte{0xab}, 32)
+	MockBasicUnlockScriptCommitment        = bytes.Repeat([]byte{0x00}, 32)
+	MockTimelockedMultisigScriptCommitment = bytes.Repeat([]byte{0x01}, 32)
 )
 
 const (
@@ -232,6 +232,7 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 			{0x01},
 			timeBytes,
 			currentAddrInfo.UnlockingScript.ScriptParams[0],
+			currentAddrInfo.UnlockingScript.ScriptParams[1],
 		},
 	}
 
@@ -518,10 +519,7 @@ func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Addres
 	if err != nil {
 		return nil, types.UnlockingScript{}, nil, err
 	}
-	rawPublic, err := childSpendKey.GetPublic().Raw()
-	if err != nil {
-		return nil, types.UnlockingScript{}, nil, err
-	}
+	pubX, pubY := childSpendKey.GetPublic().(*icrypto.NovaPublicKey).ToXY()
 
 	viewMaster, err := seedToViewMaster(seed)
 	if err != nil {
@@ -534,7 +532,7 @@ func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Addres
 
 	script := types.UnlockingScript{
 		ScriptCommitment: MockBasicUnlockScriptCommitment,
-		ScriptParams:     [][]byte{rawPublic},
+		ScriptParams:     [][]byte{pubX, pubY},
 	}
 
 	addr, err := NewBasicAddress(script, childViewKey.PrivateKey().GetPublic(), params)
