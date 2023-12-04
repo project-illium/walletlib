@@ -22,6 +22,7 @@ import (
 	"github.com/project-illium/ilxd/params"
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
+	"github.com/project-illium/ilxd/zk"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/pbkdf2"
@@ -37,7 +38,6 @@ var (
 	ErrPublicOnlyKeychain    = errors.New("keychain public only")
 	ErrPermissionDenied      = errors.New("permission denied")
 
-	MockBasicUnlockScriptCommitment        = bytes.Repeat([]byte{0x00}, 32)
 	MockTimelockedMultisigScriptCommitment = bytes.Repeat([]byte{0x01}, 32)
 )
 
@@ -530,8 +530,13 @@ func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Addres
 		return nil, types.UnlockingScript{}, nil, err
 	}
 
+	basicTransferCommitment, err := zk.LurkCommit(zk.BasicTransferScript())
+	if err != nil {
+		return nil, types.UnlockingScript{}, nil, err
+	}
+
 	script := types.UnlockingScript{
-		ScriptCommitment: MockBasicUnlockScriptCommitment,
+		ScriptCommitment: basicTransferCommitment,
 		ScriptParams:     [][]byte{pubX, pubY},
 	}
 

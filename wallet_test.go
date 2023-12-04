@@ -15,6 +15,7 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/types/transactions"
+	"github.com/project-illium/ilxd/zk"
 	"github.com/project-illium/walletlib/client"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -31,8 +32,14 @@ func mockAddress() (Address, types.UnlockingScript, lcrypto.PrivKey, error) {
 		return nil, types.UnlockingScript{}, nil, nil
 	}
 	pubX, pubY := spendKey.(*crypto.NovaPublicKey).ToXY()
+
+	basicTransferCommitment, err := zk.LurkCommit(zk.BasicTransferScript())
+	if err != nil {
+		return nil, types.UnlockingScript{}, nil, err
+	}
+
 	unlockingScript := types.UnlockingScript{
-		ScriptCommitment: MockBasicUnlockScriptCommitment,
+		ScriptCommitment: basicTransferCommitment,
 		ScriptParams:     [][]byte{pubX, pubY},
 	}
 
