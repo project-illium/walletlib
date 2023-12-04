@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -130,7 +131,7 @@ inputLoop:
 				if err != nil {
 					return nil, err
 				}
-				rawTx.PrivateInputs[i].UnlockingParams = [][]byte{sig}
+				rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
 				continue inputLoop
 			}
 		}
@@ -218,7 +219,7 @@ inputLoop:
 				if err != nil {
 					return nil, err
 				}
-				rawTx.PrivateInputs[i].UnlockingParams = [][]byte{sig}
+				rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
 				continue inputLoop
 			}
 		}
@@ -522,7 +523,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 		},
 		ScriptCommitment: inputNote.UnlockingScript.ScriptCommitment,
 		ScriptParams:     inputNote.UnlockingScript.ScriptParams,
-		UnlockingParams:  [][]byte{spendSig},
+		UnlockingParams:  signatureScript(spendSig),
 	}
 	copy(privateInput.Salt[:], inputNote.Salt)
 	copy(privateInput.AssetID[:], inputNote.Asset_ID)
@@ -697,4 +698,8 @@ func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Addr
 	}
 	tx.Proof = proof
 	return transactions.WrapTransaction(tx), nil
+}
+
+func signatureScript(sig []byte) []byte {
+	return []byte(fmt.Sprintf("(cons 0x%x 0x%x)", sig[:32], sig[32:]))
 }
