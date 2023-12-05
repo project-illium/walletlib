@@ -5,6 +5,7 @@
 package walletlib
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -131,7 +132,19 @@ inputLoop:
 				if err != nil {
 					return nil, err
 				}
-				rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
+				if bytes.Equal(privIn.ScriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
+					rawPub, err := privkey.GetPublic().Raw()
+					if err != nil {
+						return nil, err
+					}
+					unlockingParams, err := zk.MakeMultisigUnlockingParams([][]byte{rawPub}, [][]byte{sig}, sigHash)
+					if err != nil {
+						return nil, err
+					}
+					rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
+				} else {
+					rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
+				}
 				continue inputLoop
 			}
 		}
@@ -219,7 +232,19 @@ inputLoop:
 				if err != nil {
 					return nil, err
 				}
-				rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
+				if bytes.Equal(privIn.ScriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
+					rawPub, err := privkey.GetPublic().Raw()
+					if err != nil {
+						return nil, err
+					}
+					unlockingParams, err := zk.MakeMultisigUnlockingParams([][]byte{rawPub}, [][]byte{sig}, sigHash)
+					if err != nil {
+						return nil, err
+					}
+					rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
+				} else {
+					rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
+				}
 				continue inputLoop
 			}
 		}
@@ -495,6 +520,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 		Amount:       inputNote.Amount,
 		Nullifier:    nullifier[:],
 		TxoRoot:      root[:],
+		LockedUntil:  inputNote.LockedUntil,
 	}
 
 	sigHash, err := stakeTx.SigHash()

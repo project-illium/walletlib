@@ -24,6 +24,7 @@ import (
 	"github.com/project-illium/ilxd/repo/mock"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
+	"github.com/project-illium/ilxd/zk"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/tyler-smith/go-bip39"
 	"go.uber.org/zap"
@@ -447,10 +448,10 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				locktime := int64(0)
 				if note.State != [128]byte{} {
 					script := types.UnlockingScript{
-						ScriptCommitment: MockTimelockedMultisigScriptCommitment,
+						ScriptCommitment: zk.TimelockedMultisigScriptCommitment(),
 						ScriptParams: [][]byte{
-							{0x01},
 							note.State[:8],
+							{0x01},
 							addrInfo.UnlockingScript.ScriptParams[0],
 							addrInfo.UnlockingScript.ScriptParams[1],
 						},

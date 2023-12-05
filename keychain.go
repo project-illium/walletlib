@@ -37,8 +37,6 @@ var (
 	ErrEncryptedKeychain     = errors.New("keychain encrypted")
 	ErrPublicOnlyKeychain    = errors.New("keychain public only")
 	ErrPermissionDenied      = errors.New("permission denied")
-
-	MockTimelockedMultisigScriptCommitment = bytes.Repeat([]byte{0x01}, 32)
 )
 
 const (
@@ -227,7 +225,7 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 	binary.BigEndian.PutUint64(timeBytes, uint64(lockUntil.Unix()))
 
 	script := types.UnlockingScript{
-		ScriptCommitment: MockTimelockedMultisigScriptCommitment,
+		ScriptCommitment: zk.TimelockedMultisigScriptCommitment(),
 		ScriptParams: [][]byte{
 			{0x01},
 			timeBytes,
