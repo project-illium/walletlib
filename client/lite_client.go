@@ -167,11 +167,10 @@ func (c *LiteClient) GetInclusionProofs(commitments ...types.ID) ([]*blockchain.
 	)
 	for _, p := range resp.Proofs {
 		proofs = append(proofs, &blockchain.InclusionProof{
-			ID:          types.NewID(p.Commitment),
-			Accumulator: p.Accumulator,
-			Hashes:      p.Hashes,
-			Flags:       p.Flags,
-			Index:       p.Index,
+			ID:     types.NewID(p.Commitment),
+			Hashes: p.Hashes,
+			Flags:  p.Flags,
+			Index:  p.Index,
 		})
 		root = types.NewID(p.TxoRoot)
 	}

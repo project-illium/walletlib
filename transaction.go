@@ -543,9 +543,8 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 		Amount:          inputNote.Amount,
 		CommitmentIndex: proofs[0].Index,
 		InclusionProof: standard.InclusionProof{
-			Hashes:      proofs[0].Hashes,
-			Flags:       proofs[0].Flags,
-			Accumulator: proofs[0].Accumulator,
+			Hashes: proofs[0].Hashes,
+			Flags:  proofs[0].Flags,
 		},
 		ScriptCommitment: inputNote.UnlockingScript.ScriptCommitment,
 		ScriptParams:     inputNote.UnlockingScript.ScriptParams,

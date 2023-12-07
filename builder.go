@@ -205,9 +205,8 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 		Amount:          note.Amount,
 		CommitmentIndex: proof.Index,
 		InclusionProof: standard.InclusionProof{
-			Hashes:      proof.Hashes,
-			Flags:       proof.Flags,
-			Accumulator: proof.Accumulator,
+			Hashes: proof.Hashes,
+			Flags:  proof.Flags,
 		},
 		ScriptCommitment: note.UnlockingScript.ScriptCommitment,
 		ScriptParams:     note.UnlockingScript.ScriptParams,
