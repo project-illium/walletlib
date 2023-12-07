@@ -5,7 +5,6 @@
 package walletlib
 
 import (
-	"crypto/rand"
 	"errors"
 	"github.com/project-illium/ilxd/blockchain"
 	"github.com/project-illium/ilxd/crypto"
@@ -215,14 +214,19 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 	copy(privIn.AssetID[:], note.Asset_ID)
 	copy(privIn.State[:], note.State)
 
-	nullifier := types.CalculateNullifier(proof.Index, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
+	nullifier, err := types.CalculateNullifier(proof.Index, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
+	if err != nil {
+		return types.Nullifier{}, standard.PrivateInput{}, err
+	}
 	return nullifier, privIn, nil
 }
 
 func buildOutput(addr Address, amt types.Amount, state [128]byte) (*transactions.Output, standard.PrivateOutput, error) {
 	addrScriptHash := addr.ScriptHash()
-	var salt [32]byte
-	rand.Read(salt[:])
+	salt, err := types.RandomSalt()
+	if err != nil {
+		return nil, standard.PrivateOutput{}, err
+	}
 	outputNote := types.SpendNote{
 		ScriptHash: addrScriptHash[:],
 		Amount:     amt,
