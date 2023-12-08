@@ -33,7 +33,7 @@ type RawInput struct {
 type RawOutput struct {
 	Addr   Address
 	Amount types.Amount
-	State  [128]byte
+	State  types.State
 }
 
 type InputSource func(amount types.Amount) (types.Amount, []*pb.SpendNote, error)
@@ -111,7 +111,7 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 			return nil, err
 		}
 
-		txOut, privOut, err := buildOutput(changeAddr, totalIn-(toAmt+fee), [128]byte{})
+		txOut, privOut, err := buildOutput(changeAddr, totalIn-(toAmt+fee), types.State{})
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +166,7 @@ func BuildSweepTransaction(toAddr Address, inputNotes []*pb.SpendNote, fetchProo
 		raw.PrivateInputs = append(raw.PrivateInputs, privIn)
 	}
 
-	txOut, privOut, err := buildOutput(toAddr, totalIn-fee, [128]byte{})
+	txOut, privOut, err := buildOutput(toAddr, totalIn-fee, types.State{})
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,9 @@ func selectInputs(amount types.Amount, fetchInputs InputSource, feePerKB types.A
 
 func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nullifier, standard.PrivateInput, error) {
 	privIn := standard.PrivateInput{
-		Amount:          note.Amount,
+		SpendNote: types.SpendNote{
+			Amount: types.Amount(note.Amount),
+		},
 		CommitmentIndex: proof.Index,
 		InclusionProof: standard.InclusionProof{
 			Hashes: proof.Hashes,
@@ -212,7 +214,12 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 	}
 	copy(privIn.Salt[:], note.Salt)
 	copy(privIn.AssetID[:], note.Asset_ID)
-	copy(privIn.State[:], note.State)
+
+	state := new(types.State)
+	if err := state.Deserialize(note.State); err != nil {
+		return types.Nullifier{}, standard.PrivateInput{}, err
+	}
+	privIn.State = *state
 
 	nullifier, err := types.CalculateNullifier(proof.Index, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
 	if err != nil {
@@ -221,7 +228,7 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 	return nullifier, privIn, nil
 }
 
-func buildOutput(addr Address, amt types.Amount, state [128]byte) (*transactions.Output, standard.PrivateOutput, error) {
+func buildOutput(addr Address, amt types.Amount, state types.State) (*transactions.Output, standard.PrivateOutput, error) {
 	addrScriptHash := addr.ScriptHash()
 	salt, err := types.RandomSalt()
 	if err != nil {
@@ -235,9 +242,15 @@ func buildOutput(addr Address, amt types.Amount, state [128]byte) (*transactions
 		Salt:       salt,
 	}
 
-	outputCommitment := outputNote.Commitment()
+	outputCommitment, err := outputNote.Commitment()
+	if err != nil {
+		return nil, standard.PrivateOutput{}, err
+	}
 
-	serializedOutputNote := outputNote.Serialize()
+	serializedOutputNote, err := outputNote.Serialize()
+	if err != nil {
+		return nil, standard.PrivateOutput{}, err
+	}
 	toViewKey, ok := addr.ViewKey().(*crypto.Curve25519PublicKey)
 	if !ok {
 		return nil, standard.PrivateOutput{}, errors.New("address view key is not curve25519")
@@ -253,11 +266,13 @@ func buildOutput(addr Address, amt types.Amount, state [128]byte) (*transactions
 	}
 
 	privOut := standard.PrivateOutput{
-		ScriptHash: addrScriptHash[:],
-		Amount:     uint64(amt),
-		Salt:       outputNote.Salt,
-		AssetID:    outputNote.AssetID,
-		State:      outputNote.State,
+		SpendNote: types.SpendNote{
+			ScriptHash: addrScriptHash[:],
+			Amount:     amt,
+			Salt:       outputNote.Salt,
+			AssetID:    outputNote.AssetID,
+			State:      outputNote.State,
+		},
 	}
 
 	return txOut, privOut, nil

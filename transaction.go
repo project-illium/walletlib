@@ -26,7 +26,7 @@ import (
 
 var ErrInsufficientFunds = errors.New("insufficient funds")
 
-func (w *Wallet) buildAndProveTransaction(toAddr Address, toState [128]byte, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
+func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
@@ -372,14 +372,22 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 						State:      in.PrivateInput.State,
 						Salt:       in.PrivateInput.Salt,
 					}
-					commitment := sn.Commitment()
+					commitment, err := sn.Commitment()
+					if err != nil {
+						return 0, nil, err
+					}
+
+					serializedState, err := in.PrivateInput.State.Serialize(false)
+					if err != nil {
+						return 0, nil, err
+					}
 
 					note := &pb.SpendNote{
 						Commitment: commitment[:],
 						ScriptHash: scriptHash[:],
-						Amount:     in.PrivateInput.Amount,
+						Amount:     uint64(in.PrivateInput.Amount),
 						Asset_ID:   in.PrivateInput.AssetID[:],
-						State:      in.PrivateInput.State[:],
+						State:      serializedState,
 						Salt:       in.PrivateInput.Salt[:],
 						UnlockingScript: &pb.UnlockingScript{
 							ScriptCommitment: in.PrivateInput.ScriptCommitment,
@@ -467,14 +475,22 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 			State:      in.PrivateInput.State,
 			Salt:       in.PrivateInput.Salt,
 		}
-		commitment := sn.Commitment()
+		commitment, err := sn.Commitment()
+		if err != nil {
+			return nil, err
+		}
+
+		serializedState, err := in.PrivateInput.State.Serialize(false)
+		if err != nil {
+			return nil, err
+		}
 
 		note := &pb.SpendNote{
 			Commitment: commitment[:],
 			ScriptHash: scriptHash[:],
-			Amount:     in.PrivateInput.Amount,
+			Amount:     uint64(in.PrivateInput.Amount),
 			Asset_ID:   in.PrivateInput.AssetID[:],
-			State:      in.PrivateInput.State[:],
+			State:      serializedState,
 			Salt:       in.PrivateInput.Salt[:],
 			UnlockingScript: &pb.UnlockingScript{
 				ScriptCommitment: in.PrivateInput.ScriptCommitment,
@@ -543,7 +559,9 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 	stakeTx.Signature = netSig
 
 	privateInput := standard.PrivateInput{
-		Amount:          inputNote.Amount,
+		SpendNote: types.SpendNote{
+			Amount: types.Amount(inputNote.Amount),
+		},
 		CommitmentIndex: proofs[0].Index,
 		InclusionProof: standard.InclusionProof{
 			Hashes: proofs[0].Hashes,
@@ -555,7 +573,12 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 	}
 	copy(privateInput.Salt[:], inputNote.Salt)
 	copy(privateInput.AssetID[:], inputNote.Asset_ID)
-	copy(privateInput.State[:], inputNote.State)
+
+	state := new(types.State)
+	if err := state.Deserialize(inputNote.State); err != nil {
+		return nil, err
+	}
+	privateInput.State = *state
 
 	rawTx := &RawTransaction{
 		Tx: transactions.WrapTransaction(stakeTx),
@@ -632,9 +655,11 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 
 	// Create the transaction zk proof
 	privateParams := &stake.PrivateParams{
-		AssetID:          privateInput.AssetID,
-		Salt:             privateInput.Salt,
-		State:            privateInput.State,
+		SpendNote: types.SpendNote{
+			AssetID: privateInput.AssetID,
+			Salt:    privateInput.Salt,
+			State:   privateInput.State,
+		},
 		CommitmentIndex:  privateInput.CommitmentIndex,
 		InclusionProof:   privateInput.InclusionProof,
 		ScriptCommitment: privateInput.ScriptCommitment,
@@ -680,7 +705,7 @@ func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Addr
 		return nil, err
 	}
 
-	output, privOut, err := buildOutput(addr, unclaimedCoins, [128]byte{})
+	output, privOut, err := buildOutput(addr, unclaimedCoins, types.State{})
 	if err != nil {
 		return nil, err
 	}

@@ -446,11 +446,11 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 
 				locktime := int64(0)
-				if note.State != [128]byte{} {
+				if len(note.State) > 0 {
 					script := types.UnlockingScript{
 						ScriptCommitment: zk.TimelockedMultisigScriptCommitment(),
 						ScriptParams: [][]byte{
-							note.State[:8],
+							note.State[0][:8],
 							{0x01},
 							addrInfo.UnlockingScript.ScriptParams[0],
 							addrInfo.UnlockingScript.ScriptParams[1],
@@ -464,7 +464,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					}
 
 					if bytes.Equal(note.ScriptHash, scriptHash[:]) {
-						locktime = int64(binary.BigEndian.Uint64(note.State[:8]))
+						locktime = int64(binary.BigEndian.Uint64(note.State[0][:8]))
 
 						priv, err := lcrypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
 						if err != nil {
@@ -492,6 +492,13 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					continue
 				}
 
+				serializedState, err := note.State.Serialize(false)
+				if err != nil {
+					accumulator.DropProof(out.Commitment)
+					log.Errorf("Wallet connect block error: note doesn't match script hash. Block height: %d: Addr: %s", blk.Header.Height, addrInfo.Addr)
+					continue
+				}
+
 				dbNote := &pb.SpendNote{
 					Address:    addrInfo.Addr,
 					Commitment: out.Commitment,
@@ -499,7 +506,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					ScriptHash: note.ScriptHash,
 					Amount:     uint64(note.Amount),
 					Asset_ID:   note.AssetID[:],
-					State:      note.State[:],
+					State:      serializedState,
 					Salt:       note.Salt[:],
 					AccIndex:   commitmentIndex,
 					WatchOnly:  addrInfo.WatchOnly,
@@ -830,7 +837,7 @@ func (w *Wallet) ChangeWalletPassphrase(currentPassphrase, newPassphrase string)
 }
 
 func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
-	tx, err := w.buildAndProveTransaction(toAddr, [128]byte{}, amount, feePerKB, inputCommitments...)
+	tx, err := w.buildAndProveTransaction(toAddr, types.State{}, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
@@ -856,10 +863,10 @@ func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerK
 	if err != nil {
 		return types.ID{}, err
 	}
-	var locktime [128]byte
-	binary.BigEndian.PutUint64(locktime[:8], uint64(lockUntil.Unix()))
+	locktime := make([]byte, 8)
+	binary.BigEndian.PutUint64(locktime, uint64(lockUntil.Unix()))
 
-	tx, err := w.buildAndProveTransaction(addr, locktime, amount, feePerKB, inputCommitments...)
+	tx, err := w.buildAndProveTransaction(addr, types.State{locktime}, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}

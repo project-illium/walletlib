@@ -73,7 +73,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount := types.Amount(1000000)
-	output, _, err := buildOutput(addr, toAmount, [128]byte{})
+	output, _, err := buildOutput(addr, toAmount, types.State{})
 	assert.NoError(t, err)
 
 	// Receive
@@ -130,7 +130,7 @@ func TestWallet(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount = types.Amount(1000000)
-	output, _, err = buildOutput(addr, toAmount, [128]byte{})
+	output, _, err = buildOutput(addr, toAmount, types.State{})
 	assert.NoError(t, err)
 
 	// Receive to unknown addr
@@ -212,7 +212,7 @@ func TestTransactions(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount := types.Amount(1000000)
-	output, _, err := buildOutput(addr, toAmount, [128]byte{})
+	output, _, err := buildOutput(addr, toAmount, types.State{})
 	assert.NoError(t, err)
 
 	// Receive
@@ -277,7 +277,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	assert.NoError(t, err)
 
 	toAmount := types.Amount(1000000)
-	output, _, err := buildOutput(addr, toAmount, [128]byte{})
+	output, _, err := buildOutput(addr, toAmount, types.State{})
 	assert.NoError(t, err)
 
 	// Receive
@@ -291,7 +291,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	}
 	w.ConnectBlock(blk0)
 
-	output, _, err = buildOutput(addr, toAmount, [128]byte{})
+	output, _, err = buildOutput(addr, toAmount, types.State{})
 	assert.NoError(t, err)
 
 	// Receive2

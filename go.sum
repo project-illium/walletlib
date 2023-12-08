@@ -572,6 +572,8 @@ github.com/project-illium/ilxd v0.0.6-alpha.0.20231207015312-4c93a2fd5055 h1:1dN
 github.com/project-illium/ilxd v0.0.6-alpha.0.20231207015312-4c93a2fd5055/go.mod h1:vK38KfKFfezJjHGOXhuV5WORqI+IqJJUK+82fxo++QA=
 github.com/project-illium/ilxd v0.0.6-alpha.0.20231207173834-41f367af8d67 h1:i+f1Pql7yBAkIAmuO94R3pnykmHjVXQ+Vd3kuwWhuGE=
 github.com/project-illium/ilxd v0.0.6-alpha.0.20231207173834-41f367af8d67/go.mod h1:Wv4vq5t1Asy92Q2Nue4E9TZcgsXYJdBZ6JAXzjFLj6A=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20231208042219-3fa4600e949e h1:/W/MTBQZEv3lnOzxGRW1mBwtkUSUKa0Qqnm1+BEaIpE=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20231208042219-3fa4600e949e/go.mod h1:wcM+jedZ3R+0EgnjTADFDbd2IYuJxlZqk9VNlLH+6tI=
 github.com/project-illium/weightedrand/v2 v2.1.0 h1:8zVDjthKwP0yfHt3uC3fTEqH0KJ5AwCL02YYx+cpdb8=
 github.com/project-illium/weightedrand/v2 v2.1.0/go.mod h1:/AeYfjb6TF9oSmsWXWZQ6H2+5NAQB6zdcCJbhDZxAd0=
 github.com/prometheus/client_golang v0.8.0/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
