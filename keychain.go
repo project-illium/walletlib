@@ -227,8 +227,8 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 	script := types.UnlockingScript{
 		ScriptCommitment: zk.TimelockedMultisigScriptCommitment(),
 		ScriptParams: [][]byte{
-			{0x01},
 			timeBytes,
+			{0x01},
 			currentAddrInfo.UnlockingScript.ScriptParams[0],
 			currentAddrInfo.UnlockingScript.ScriptParams[1],
 		},

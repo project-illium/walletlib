@@ -19,7 +19,6 @@ import (
 	"github.com/project-illium/ilxd/blockchain"
 	"github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/params"
-	"github.com/project-illium/ilxd/params/hash"
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/repo/mock"
 	"github.com/project-illium/ilxd/types"
@@ -429,7 +428,13 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
-				if !bytes.Equal(hash.HashFunc(match.DecryptedNote), out.Commitment) {
+				commitment, err := note.Commitment()
+				if err != nil {
+					accumulator.DropProof(out.Commitment)
+					log.Errorf("Wallet connect block error: error creating commitment: %s", err)
+					continue
+				}
+				if !bytes.Equal(commitment.Bytes(), out.Commitment) {
 					accumulator.DropProof(out.Commitment)
 					log.Errorf("Wallet connect block error: decrypted note hash does not match commitment")
 					continue
@@ -446,7 +451,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 
 				locktime := int64(0)
-				if len(note.State) > 0 {
+				if len(note.State) > 0 && len(note.State[0]) >= 8 {
 					script := types.UnlockingScript{
 						ScriptCommitment: zk.TimelockedMultisigScriptCommitment(),
 						ScriptParams: [][]byte{
@@ -522,6 +527,12 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
+				if _, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment))); err != datastore.ErrNotFound {
+					accumulator.DropProof(out.Commitment)
+					log.Error("Wallet connect block error: output commitment already exists in database")
+					continue
+				}
+
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment)), ser); err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.Errorf("Wallet connect block error: %s", err)
