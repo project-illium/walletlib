@@ -95,6 +95,10 @@ func DecodeAddress(addr string, params *params.NetworkParams) (Address, error) {
 		return nil, fmt.Errorf("no version")
 	}
 
+	if data[0] != 0x01 {
+		return nil, fmt.Errorf("unknown address version")
+	}
+
 	// The remaining characters of the address returned are grouped into
 	// words of 5 bits. In order to restore the original address bytes,
 	// we'll need to regroup into 8 bit words.
