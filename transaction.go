@@ -352,9 +352,9 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 					}
 				} else if in.PrivateInput != nil {
 
-					us := types.UnlockingScript{
-						ScriptCommitment: in.PrivateInput.ScriptCommitment,
-						ScriptParams:     in.PrivateInput.ScriptParams,
+					us := types.LockingScript{
+						ScriptCommitment: types.NewID(in.PrivateInput.ScriptCommitment),
+						LockingParams:    in.PrivateInput.ScriptParams,
 					}
 					scriptHash, err := us.Hash()
 					if err != nil {
@@ -455,9 +455,9 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 
 		inputNote = &note
 	} else if in.PrivateInput != nil {
-		us := types.UnlockingScript{
-			ScriptCommitment: in.PrivateInput.ScriptCommitment,
-			ScriptParams:     in.PrivateInput.ScriptParams,
+		us := types.LockingScript{
+			ScriptCommitment: types.NewID(in.PrivateInput.ScriptCommitment),
+			LockingParams:    in.PrivateInput.ScriptParams,
 		}
 		scriptHash, err := us.Hash()
 		if err != nil {

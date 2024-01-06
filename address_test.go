@@ -22,9 +22,9 @@ func TestBasicAddress(t *testing.T) {
 
 	pubX, pubY := pubkey.(*crypto.NovaPublicKey).ToXY()
 
-	us := types.UnlockingScript{
-		ScriptCommitment: make([]byte, 32),
-		ScriptParams:     [][]byte{pubX, pubY},
+	us := types.LockingScript{
+		ScriptCommitment: types.ID{},
+		LockingParams:    [][]byte{pubX, pubY},
 	}
 
 	addr, err := NewBasicAddress(us, viewKey, &params.MainnetParams)

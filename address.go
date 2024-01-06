@@ -31,7 +31,7 @@ type BasicAddress struct {
 	viewKey crypto.PubKey
 }
 
-func NewBasicAddress(script types.UnlockingScript, viewKey crypto.PubKey, params *params.NetworkParams) (*BasicAddress, error) {
+func NewBasicAddress(script types.LockingScript, viewKey crypto.PubKey, params *params.NetworkParams) (*BasicAddress, error) {
 	_, ok := viewKey.(*crypto2.Curve25519PublicKey)
 	if !ok {
 		return nil, errors.New("viewKey must be of type Curve25519PublicKey")

@@ -74,7 +74,7 @@ func (c *LiteClient) IsFullClient() bool {
 	return false
 }
 
-func (c *LiteClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error {
+func (c *LiteClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.LockingScript, walletBirthday int64) error {
 	keyBytes, err := crypto.MarshalPrivateKey(viewKey)
 	if err != nil {
 		return err

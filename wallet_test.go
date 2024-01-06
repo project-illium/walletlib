@@ -22,30 +22,30 @@ import (
 	"time"
 )
 
-func mockAddress() (Address, types.UnlockingScript, lcrypto.PrivKey, error) {
+func mockAddress() (Address, types.LockingScript, lcrypto.PrivKey, error) {
 	viewPriv, viewPub, err := crypto.GenerateCurve25519Key(rand.Reader)
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, nil
 	}
 	_, spendKey, err := crypto.GenerateNovaKey(rand.Reader)
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, nil
 	}
 	pubX, pubY := spendKey.(*crypto.NovaPublicKey).ToXY()
 
 	basicTransferCommitment, err := zk.LurkCommit(zk.BasicTransferScript())
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, err
+		return nil, types.LockingScript{}, nil, err
 	}
 
-	unlockingScript := types.UnlockingScript{
-		ScriptCommitment: basicTransferCommitment,
-		ScriptParams:     [][]byte{pubX, pubY},
+	unlockingScript := types.LockingScript{
+		ScriptCommitment: types.NewID(basicTransferCommitment),
+		LockingParams:    [][]byte{pubX, pubY},
 	}
 
 	addr, err := NewBasicAddress(unlockingScript, viewPub, &params.RegestParams)
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, nil
 	}
 	return addr, unlockingScript, viewPriv, nil
 }

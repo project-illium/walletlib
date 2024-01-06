@@ -30,7 +30,7 @@ type BlockchainClient interface {
 	// Register is used to register the client with a server.
 	//
 	// This should only be implemented if IsFullClient is false.
-	Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error
+	Register(viewKey *icrypto.Curve25519PrivateKey, ul types.LockingScript, walletBirthday int64) error
 
 	// Broadcast must broadcast the transaction to the illium network
 	Broadcast(tx *transactions.Transaction) error

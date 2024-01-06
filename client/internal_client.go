@@ -29,7 +29,7 @@ func (c *InternalClient) IsFullClient() bool {
 	return true
 }
 
-func (c *InternalClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error {
+func (c *InternalClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.LockingScript, walletBirthday int64) error {
 	return ErrUnimplemented
 }
 

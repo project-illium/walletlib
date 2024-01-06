@@ -72,7 +72,7 @@ func (c *RPCClient) IsFullClient() bool {
 	return true
 }
 
-func (c *RPCClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.UnlockingScript, walletBirthday int64) error {
+func (c *RPCClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.LockingScript, walletBirthday int64) error {
 	return ErrUnimplemented
 }
 

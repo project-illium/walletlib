@@ -94,8 +94,8 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
 		UnlockingScript: &pb.UnlockingScript{
-			ScriptCommitment: unlockingScript.ScriptCommitment,
-			ScriptParams:     unlockingScript.ScriptParams,
+			ScriptCommitment: unlockingScript.ScriptCommitment.Bytes(),
+			ScriptParams:     unlockingScript.LockingParams,
 		},
 		ScriptHash:  scriptHash[:],
 		ViewPrivKey: serializedKey,
@@ -224,9 +224,9 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 	timeBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(timeBytes, uint64(lockUntil.Unix()))
 
-	script := types.UnlockingScript{
-		ScriptCommitment: zk.TimelockedMultisigScriptCommitment(),
-		ScriptParams: [][]byte{
+	script := types.LockingScript{
+		ScriptCommitment: types.NewID(zk.TimelockedMultisigScriptCommitment()),
+		LockingParams: [][]byte{
 			timeBytes,
 			{0x01},
 			currentAddrInfo.UnlockingScript.ScriptParams[0],
@@ -286,8 +286,8 @@ func (kc *Keychain) NewAddress() (Address, error) {
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
 		UnlockingScript: &pb.UnlockingScript{
-			ScriptCommitment: unlockingScript.ScriptCommitment,
-			ScriptParams:     unlockingScript.ScriptParams,
+			ScriptCommitment: unlockingScript.ScriptCommitment.Bytes(),
+			ScriptParams:     unlockingScript.LockingParams,
 		},
 		ScriptHash:  scriptHash[:],
 		ViewPrivKey: serializedKey,
@@ -389,7 +389,7 @@ func (kc *Keychain) ViewKey(addr Address) (crypto.PrivKey, error) {
 	return crypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
 }
 
-func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.UnlockingScript, viewPrivkey crypto.PrivKey) error {
+func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.LockingScript, viewPrivkey crypto.PrivKey) error {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
 
@@ -416,8 +416,8 @@ func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.UnlockingS
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
 		UnlockingScript: &pb.UnlockingScript{
-			ScriptCommitment: unlockingScript.ScriptCommitment,
-			ScriptParams:     unlockingScript.ScriptParams,
+			ScriptCommitment: unlockingScript.ScriptCommitment.Bytes(),
+			ScriptParams:     unlockingScript.LockingParams,
 		},
 		ScriptHash:  scriptHash[:],
 		ViewPrivKey: serializedKey,
@@ -508,34 +508,34 @@ func (kc *Keychain) addrInfo(viewKey crypto.PrivKey) (*pb.AddrInfo, error) {
 	return &addrInfo, nil
 }
 
-func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Address, types.UnlockingScript, *icrypto.Curve25519PrivateKey, error) {
+func newAddress(index uint32, seed []byte, params *params.NetworkParams) (Address, types.LockingScript, *icrypto.Curve25519PrivateKey, error) {
 	spendMaster, err := seedToSpendMaster(seed)
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, err
+		return nil, types.LockingScript{}, nil, err
 	}
 	childSpendKey, err := spendMaster.Child(index)
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, err
+		return nil, types.LockingScript{}, nil, err
 	}
 	pubX, pubY := childSpendKey.GetPublic().(*icrypto.NovaPublicKey).ToXY()
 
 	viewMaster, err := seedToViewMaster(seed)
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, err
+		return nil, types.LockingScript{}, nil, err
 	}
 	childViewKey, err := viewMaster.Child(index)
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, err
+		return nil, types.LockingScript{}, nil, err
 	}
 
 	basicTransferCommitment, err := zk.LurkCommit(zk.BasicTransferScript())
 	if err != nil {
-		return nil, types.UnlockingScript{}, nil, err
+		return nil, types.LockingScript{}, nil, err
 	}
 
-	script := types.UnlockingScript{
-		ScriptCommitment: basicTransferCommitment,
-		ScriptParams:     [][]byte{pubX, pubY},
+	script := types.LockingScript{
+		ScriptCommitment: types.NewID(basicTransferCommitment),
+		LockingParams:    [][]byte{pubX, pubY},
 	}
 
 	addr, err := NewBasicAddress(script, childViewKey.PrivateKey().GetPublic(), params)

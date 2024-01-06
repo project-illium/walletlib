@@ -452,9 +452,9 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 
 				locktime := int64(0)
 				if len(note.State) > 0 && len(note.State[0]) >= 8 {
-					script := types.UnlockingScript{
-						ScriptCommitment: zk.TimelockedMultisigScriptCommitment(),
-						ScriptParams: [][]byte{
+					script := types.LockingScript{
+						ScriptCommitment: types.NewID(zk.TimelockedMultisigScriptCommitment()),
+						LockingParams: [][]byte{
 							note.State[0][:8],
 							{0x01},
 							addrInfo.UnlockingScript.ScriptParams[0],
@@ -486,8 +486,8 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 						}
 						addrInfo.Addr = addr.String()
 						addrInfo.ScriptHash = scriptHash[:]
-						addrInfo.UnlockingScript.ScriptCommitment = script.ScriptCommitment
-						addrInfo.UnlockingScript.ScriptParams = script.ScriptParams
+						addrInfo.UnlockingScript.ScriptCommitment = script.ScriptCommitment.Bytes()
+						addrInfo.UnlockingScript.ScriptParams = script.LockingParams
 					}
 				}
 
@@ -900,7 +900,7 @@ func (w *Wallet) Stake(commitments []types.ID) error {
 	return nil
 }
 
-func (w *Wallet) ImportAddress(addr Address, unlockingScript types.UnlockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
+func (w *Wallet) ImportAddress(addr Address, unlockingScript types.LockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
 	if !w.chainClient.IsFullClient() {
 		return errors.New("lite client mode does not support address importing")
 	}
@@ -1036,26 +1036,26 @@ func (w *Wallet) Close() {
 	}
 }
 
-func (w *Wallet) registrationParams() (*crypto.Curve25519PrivateKey, types.UnlockingScript, error) {
+func (w *Wallet) registrationParams() (*crypto.Curve25519PrivateKey, types.LockingScript, error) {
 	addr, err := w.keychain.Address()
 	if err != nil {
-		return nil, types.UnlockingScript{}, err
+		return nil, types.LockingScript{}, err
 	}
 	addrInfo, err := w.keychain.AddrInfo(addr)
 	if err != nil {
-		return nil, types.UnlockingScript{}, err
+		return nil, types.LockingScript{}, err
 	}
 	viewKey, err := lcrypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
 	if err != nil {
-		return nil, types.UnlockingScript{}, err
+		return nil, types.LockingScript{}, err
 	}
 	curveKey, ok := viewKey.(*crypto.Curve25519PrivateKey)
 	if !ok {
-		return nil, types.UnlockingScript{}, errors.New("invalid key type")
+		return nil, types.LockingScript{}, errors.New("invalid key type")
 	}
-	ul := types.UnlockingScript{
-		ScriptCommitment: addrInfo.UnlockingScript.ScriptCommitment,
-		ScriptParams:     addrInfo.UnlockingScript.ScriptParams,
+	ul := types.LockingScript{
+		ScriptCommitment: types.NewID(addrInfo.UnlockingScript.ScriptCommitment),
+		LockingParams:    addrInfo.UnlockingScript.ScriptParams,
 	}
 	return curveKey, ul, nil
 }
