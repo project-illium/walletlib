@@ -185,7 +185,7 @@ func (w *Wallet) Start() {
 	log.Info("Wallet started. Syncing blocks to tip...")
 
 	if !w.chainClient.IsFullClient() {
-		key, unlockingScript, err := w.registrationParams()
+		key, lockingScript, err := w.registrationParams()
 		if err != nil {
 			log.Errorf("Error loading registration parameters: %s", err)
 		} else {
@@ -193,7 +193,7 @@ func (w *Wallet) Start() {
 			if !w.birthday.Before(time.Unix(MinBirthday, 0)) {
 				birthday = w.birthday.Unix()
 			}
-			if err := w.chainClient.Register(key, unlockingScript, birthday); err != nil {
+			if err := w.chainClient.Register(key, lockingScript, birthday); err != nil {
 				log.Errorf("Error registering lite client with server: %s", err)
 			}
 		}
@@ -457,8 +457,8 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 						LockingParams: [][]byte{
 							note.State[0][:8],
 							{0x01},
-							addrInfo.UnlockingScript.ScriptParams[0],
-							addrInfo.UnlockingScript.ScriptParams[1],
+							addrInfo.LockingScript.LockingParams[0],
+							addrInfo.LockingScript.LockingParams[1],
 						},
 					}
 					scriptHash, err := script.Hash()
@@ -486,8 +486,8 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 						}
 						addrInfo.Addr = addr.String()
 						addrInfo.ScriptHash = scriptHash[:]
-						addrInfo.UnlockingScript.ScriptCommitment = script.ScriptCommitment.Bytes()
-						addrInfo.UnlockingScript.ScriptParams = script.LockingParams
+						addrInfo.LockingScript.ScriptCommitment = script.ScriptCommitment.Bytes()
+						addrInfo.LockingScript.LockingParams = script.LockingParams
 					}
 				}
 
@@ -515,9 +515,9 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					Salt:       note.Salt[:],
 					AccIndex:   commitmentIndex,
 					WatchOnly:  addrInfo.WatchOnly,
-					UnlockingScript: &pb.UnlockingScript{
-						ScriptCommitment: addrInfo.UnlockingScript.ScriptCommitment,
-						ScriptParams:     addrInfo.UnlockingScript.ScriptParams,
+					LockingScript: &pb.LockingScript{
+						ScriptCommitment: addrInfo.LockingScript.ScriptCommitment,
+						LockingParams:    addrInfo.LockingScript.LockingParams,
 					},
 					LockedUntil: locktime,
 				}
@@ -538,7 +538,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
-				nullifier, err := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.UnlockingScript.ScriptCommitment, addrInfo.UnlockingScript.ScriptParams...)
+				nullifier, err := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.LockingScript.ScriptCommitment, addrInfo.LockingScript.LockingParams...)
 				if err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.Errorf("Wallet connect block error: %s", err)
@@ -900,12 +900,12 @@ func (w *Wallet) Stake(commitments []types.ID) error {
 	return nil
 }
 
-func (w *Wallet) ImportAddress(addr Address, unlockingScript types.LockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
+func (w *Wallet) ImportAddress(addr Address, lockingScript types.LockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
 	if !w.chainClient.IsFullClient() {
 		return errors.New("lite client mode does not support address importing")
 	}
 
-	scriptHash, err := unlockingScript.Hash()
+	scriptHash, err := lockingScript.Hash()
 	if err != nil {
 		return err
 	}
@@ -924,7 +924,7 @@ func (w *Wallet) ImportAddress(addr Address, unlockingScript types.LockingScript
 		return errors.New("rescan already running")
 	}
 
-	if err := w.keychain.ImportAddress(addr, unlockingScript, viewPrivkey); err != nil {
+	if err := w.keychain.ImportAddress(addr, lockingScript, viewPrivkey); err != nil {
 		return err
 	}
 
@@ -1054,8 +1054,8 @@ func (w *Wallet) registrationParams() (*crypto.Curve25519PrivateKey, types.Locki
 		return nil, types.LockingScript{}, errors.New("invalid key type")
 	}
 	ul := types.LockingScript{
-		ScriptCommitment: types.NewID(addrInfo.UnlockingScript.ScriptCommitment),
-		LockingParams:    addrInfo.UnlockingScript.ScriptParams,
+		ScriptCommitment: types.NewID(addrInfo.LockingScript.ScriptCommitment),
+		LockingParams:    addrInfo.LockingScript.LockingParams,
 	}
 	return curveKey, ul, nil
 }

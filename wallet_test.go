@@ -38,16 +38,16 @@ func mockAddress() (Address, types.LockingScript, lcrypto.PrivKey, error) {
 		return nil, types.LockingScript{}, nil, err
 	}
 
-	unlockingScript := types.LockingScript{
+	lockingScript := types.LockingScript{
 		ScriptCommitment: types.NewID(basicTransferCommitment),
 		LockingParams:    [][]byte{pubX, pubY},
 	}
 
-	addr, err := NewBasicAddress(unlockingScript, viewPub, &params.RegestParams)
+	addr, err := NewBasicAddress(lockingScript, viewPub, &params.RegestParams)
 	if err != nil {
 		return nil, types.LockingScript{}, nil, nil
 	}
-	return addr, unlockingScript, viewPriv, nil
+	return addr, lockingScript, viewPriv, nil
 }
 
 func TestWallet(t *testing.T) {
@@ -96,7 +96,7 @@ func TestWallet(t *testing.T) {
 
 	var salt [32]byte
 	copy(salt[:], notes[0].Salt)
-	nullifier, err := types.CalculateNullifier(notes[0].AccIndex, salt, notes[0].UnlockingScript.ScriptCommitment, notes[0].UnlockingScript.ScriptParams...)
+	nullifier, err := types.CalculateNullifier(notes[0].AccIndex, salt, notes[0].LockingScript.ScriptCommitment, notes[0].LockingScript.LockingParams...)
 	assert.NoError(t, err)
 
 	// Spend
@@ -126,7 +126,7 @@ func TestWallet(t *testing.T) {
 	assert.Equal(t, uint32(2), w.chainHeight)
 
 	// Test import
-	addr, unlockingScript, viewPriv, err := mockAddress()
+	addr, lockingScript, viewPriv, err := mockAddress()
 	assert.NoError(t, err)
 
 	toAmount = types.Amount(1000000)
@@ -176,7 +176,7 @@ func TestWallet(t *testing.T) {
 		return ret, 3, nil
 	}
 
-	assert.NoError(t, w.ImportAddress(addr, unlockingScript, viewPriv, true, 1))
+	assert.NoError(t, w.ImportAddress(addr, lockingScript, viewPriv, true, 1))
 	<-time.After(time.Second * 1)
 
 	notes, err = w.Notes()
@@ -312,7 +312,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	// Stake
 	var salt [32]byte
 	copy(salt[:], notes[1].Salt)
-	nullifier, err := types.CalculateNullifier(notes[1].AccIndex, salt, notes[1].UnlockingScript.ScriptCommitment, notes[1].UnlockingScript.ScriptParams...)
+	nullifier, err := types.CalculateNullifier(notes[1].AccIndex, salt, notes[1].LockingScript.ScriptCommitment, notes[1].LockingScript.LockingParams...)
 	assert.NoError(t, err)
 
 	blk2 := &blocks.Block{

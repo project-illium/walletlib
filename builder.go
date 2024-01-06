@@ -209,8 +209,8 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 			Hashes: proof.Hashes,
 			Flags:  proof.Flags,
 		},
-		ScriptCommitment: note.UnlockingScript.ScriptCommitment,
-		ScriptParams:     note.UnlockingScript.ScriptParams,
+		ScriptCommitment: note.LockingScript.ScriptCommitment,
+		ScriptParams:     note.LockingScript.LockingParams,
 	}
 	copy(privIn.Salt[:], note.Salt)
 	copy(privIn.AssetID[:], note.Asset_ID)

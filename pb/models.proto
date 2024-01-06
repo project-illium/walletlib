@@ -14,7 +14,7 @@ message SpendNote {
     bool watch_only                  = 10;
     bool staked                      = 11;
     int64 locked_until               = 12;
-    UnlockingScript unlocking_script = 13;
+    LockingScript locking_script = 13;
 }
 
 message WalletTransaction {
@@ -41,14 +41,14 @@ message WalletTransaction {
 
 message AddrInfo {
     string addr                      = 1;
-    UnlockingScript unlocking_script = 2;
+    LockingScript locking_script = 2;
     bytes script_hash                = 3;
     bytes view_priv_key              = 4;
     uint32 key_index                 = 5;
     bool watch_only                  = 6;
 }
 
-message UnlockingScript {
+message LockingScript {
     bytes script_commitment      = 1;
-    repeated bytes script_params = 2;
+    repeated bytes locking_params = 2;
 }

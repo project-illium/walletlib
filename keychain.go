@@ -76,7 +76,7 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 
 	seed := bip39.NewSeed(mnemonic, "")
 
-	addr, unlockingScript, viewKey, err := newAddress(0, seed, params)
+	addr, lockingScript, viewKey, err := newAddress(0, seed, params)
 	if err != nil {
 		return nil, err
 	}
@@ -86,16 +86,16 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	scriptHash, err := unlockingScript.Hash()
+	scriptHash, err := lockingScript.Hash()
 	if err != nil {
 		return nil, err
 	}
 
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
-		UnlockingScript: &pb.UnlockingScript{
-			ScriptCommitment: unlockingScript.ScriptCommitment.Bytes(),
-			ScriptParams:     unlockingScript.LockingParams,
+		LockingScript: &pb.LockingScript{
+			ScriptCommitment: lockingScript.ScriptCommitment.Bytes(),
+			LockingParams:    lockingScript.LockingParams,
 		},
 		ScriptHash:  scriptHash[:],
 		ViewPrivKey: serializedKey,
@@ -229,8 +229,8 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 		LockingParams: [][]byte{
 			timeBytes,
 			{0x01},
-			currentAddrInfo.UnlockingScript.ScriptParams[0],
-			currentAddrInfo.UnlockingScript.ScriptParams[1],
+			currentAddrInfo.LockingScript.LockingParams[0],
+			currentAddrInfo.LockingScript.LockingParams[1],
 		},
 	}
 
@@ -269,11 +269,11 @@ func (kc *Keychain) NewAddress() (Address, error) {
 
 	newIndex := currentAddrInfo.KeyIndex + 1
 
-	addr, unlockingScript, viewKey, err := newAddress(newIndex, kc.unencryptedSeed, kc.params)
+	addr, lockingScript, viewKey, err := newAddress(newIndex, kc.unencryptedSeed, kc.params)
 	if err != nil {
 		return nil, err
 	}
-	scriptHash, err := unlockingScript.Hash()
+	scriptHash, err := lockingScript.Hash()
 	if err != nil {
 		return nil, err
 	}
@@ -285,9 +285,9 @@ func (kc *Keychain) NewAddress() (Address, error) {
 
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
-		UnlockingScript: &pb.UnlockingScript{
-			ScriptCommitment: unlockingScript.ScriptCommitment.Bytes(),
-			ScriptParams:     unlockingScript.LockingParams,
+		LockingScript: &pb.LockingScript{
+			ScriptCommitment: lockingScript.ScriptCommitment.Bytes(),
+			LockingParams:    lockingScript.LockingParams,
 		},
 		ScriptHash:  scriptHash[:],
 		ViewPrivKey: serializedKey,
@@ -389,7 +389,7 @@ func (kc *Keychain) ViewKey(addr Address) (crypto.PrivKey, error) {
 	return crypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
 }
 
-func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.LockingScript, viewPrivkey crypto.PrivKey) error {
+func (kc *Keychain) ImportAddress(addr Address, lockingScript types.LockingScript, viewPrivkey crypto.PrivKey) error {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
 
@@ -408,16 +408,16 @@ func (kc *Keychain) ImportAddress(addr Address, unlockingScript types.LockingScr
 		return errors.New("view key already exists in wallet")
 	}
 
-	scriptHash, err := unlockingScript.Hash()
+	scriptHash, err := lockingScript.Hash()
 	if err != nil {
 		return err
 	}
 
 	addrInfo := &pb.AddrInfo{
 		Addr: addr.String(),
-		UnlockingScript: &pb.UnlockingScript{
-			ScriptCommitment: unlockingScript.ScriptCommitment.Bytes(),
-			ScriptParams:     unlockingScript.LockingParams,
+		LockingScript: &pb.LockingScript{
+			ScriptCommitment: lockingScript.ScriptCommitment.Bytes(),
+			LockingParams:    lockingScript.LockingParams,
 		},
 		ScriptHash:  scriptHash[:],
 		ViewPrivKey: serializedKey,

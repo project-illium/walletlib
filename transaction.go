@@ -389,9 +389,9 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 						Asset_ID:   in.PrivateInput.AssetID[:],
 						State:      serializedState,
 						Salt:       in.PrivateInput.Salt[:],
-						UnlockingScript: &pb.UnlockingScript{
+						LockingScript: &pb.LockingScript{
 							ScriptCommitment: in.PrivateInput.ScriptCommitment,
-							ScriptParams:     in.PrivateInput.ScriptParams,
+							LockingParams:    in.PrivateInput.ScriptParams,
 						},
 						AccIndex: in.PrivateInput.CommitmentIndex,
 					}
@@ -492,9 +492,9 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 			Asset_ID:   in.PrivateInput.AssetID[:],
 			State:      serializedState,
 			Salt:       in.PrivateInput.Salt[:],
-			UnlockingScript: &pb.UnlockingScript{
+			LockingScript: &pb.LockingScript{
 				ScriptCommitment: in.PrivateInput.ScriptCommitment,
-				ScriptParams:     in.PrivateInput.ScriptParams,
+				LockingParams:    in.PrivateInput.ScriptParams,
 			},
 			AccIndex: in.PrivateInput.CommitmentIndex,
 		}
@@ -524,7 +524,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 
 	var salt [32]byte
 	copy(salt[:], inputNote.Salt)
-	nullifier, err := types.CalculateNullifier(proofs[0].Index, salt, inputNote.UnlockingScript.ScriptCommitment, inputNote.UnlockingScript.ScriptParams...)
+	nullifier, err := types.CalculateNullifier(proofs[0].Index, salt, inputNote.LockingScript.ScriptCommitment, inputNote.LockingScript.LockingParams...)
 	if err != nil {
 		return nil, err
 	}
@@ -567,8 +567,8 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 			Hashes: proofs[0].Hashes,
 			Flags:  proofs[0].Flags,
 		},
-		ScriptCommitment: inputNote.UnlockingScript.ScriptCommitment,
-		ScriptParams:     inputNote.UnlockingScript.ScriptParams,
+		ScriptCommitment: inputNote.LockingScript.ScriptCommitment,
+		ScriptParams:     inputNote.LockingScript.LockingParams,
 		UnlockingParams:  signatureScript(spendSig),
 	}
 	copy(privateInput.Salt[:], inputNote.Salt)
