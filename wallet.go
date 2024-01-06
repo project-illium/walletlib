@@ -910,7 +910,7 @@ func (w *Wallet) ImportAddress(addr Address, lockingScript types.LockingScript, 
 		return err
 	}
 	if scriptHash != addr.ScriptHash() {
-		return errors.New("unlocking script does not match address")
+		return errors.New("locking script does not match address")
 	}
 	if !viewPrivkey.GetPublic().Equals(addr.ViewKey()) {
 		return errors.New("view key does not match address")

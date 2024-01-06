@@ -82,9 +82,9 @@ func (c *LiteClient) Register(viewKey *icrypto.Curve25519PrivateKey, ul types.Lo
 	c.viewKeyBytes = keyBytes
 
 	_, err = c.wsClient.RegisterViewKey(makeContext(c.ctx, c.authToken), &pb.RegisterViewKeyRequest{
-		ViewKey:                   keyBytes,
-		SerializedUnlockingScript: ul.Serialize(),
-		Birthday:                  walletBirthday,
+		ViewKey:                 keyBytes,
+		SerializedLockingScript: ul.Serialize(),
+		Birthday:                walletBirthday,
 	})
 	return err
 }
