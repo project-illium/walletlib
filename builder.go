@@ -235,7 +235,7 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 		return nil, standard.PrivateOutput{}, err
 	}
 	outputNote := types.SpendNote{
-		ScriptHash: addrScriptHash[:],
+		ScriptHash: addrScriptHash,
 		Amount:     amt,
 		AssetID:    types.IlliumCoinID,
 		State:      state,
@@ -267,7 +267,7 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 
 	privOut := standard.PrivateOutput{
 		SpendNote: types.SpendNote{
-			ScriptHash: addrScriptHash[:],
+			ScriptHash: addrScriptHash,
 			Amount:     amt,
 			Salt:       outputNote.Salt,
 			AssetID:    outputNote.AssetID,

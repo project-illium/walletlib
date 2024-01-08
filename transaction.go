@@ -366,7 +366,7 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 					}
 
 					sn := &types.SpendNote{
-						ScriptHash: scriptHash[:],
+						ScriptHash: scriptHash,
 						Amount:     types.Amount(in.PrivateInput.Amount),
 						AssetID:    in.PrivateInput.AssetID,
 						State:      in.PrivateInput.State,
@@ -469,7 +469,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 		}
 
 		sn := &types.SpendNote{
-			ScriptHash: scriptHash[:],
+			ScriptHash: scriptHash,
 			Amount:     types.Amount(in.PrivateInput.Amount),
 			AssetID:    in.PrivateInput.AssetID,
 			State:      in.PrivateInput.State,

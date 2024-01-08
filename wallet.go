@@ -468,7 +468,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 						continue
 					}
 
-					if bytes.Equal(note.ScriptHash, scriptHash[:]) {
+					if bytes.Equal(note.ScriptHash.Bytes(), scriptHash[:]) {
 						locktime = int64(binary.BigEndian.Uint64(note.State[0][:8]))
 
 						priv, err := lcrypto.UnmarshalPrivateKey(addrInfo.ViewPrivKey)
@@ -491,7 +491,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					}
 				}
 
-				if !bytes.Equal(note.ScriptHash, addrInfo.ScriptHash) {
+				if !bytes.Equal(note.ScriptHash.Bytes(), addrInfo.ScriptHash) {
 					accumulator.DropProof(out.Commitment)
 					log.Errorf("Wallet connect block error: note doesn't match script hash. Block height: %d: Addr: %s", blk.Header.Height, addrInfo.Addr)
 					continue
@@ -508,7 +508,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					Address:    addrInfo.Addr,
 					Commitment: out.Commitment,
 					KeyIndex:   addrInfo.KeyIndex,
-					ScriptHash: note.ScriptHash,
+					ScriptHash: note.ScriptHash.Bytes(),
 					Amount:     uint64(note.Amount),
 					Asset_ID:   note.AssetID[:],
 					State:      serializedState,
