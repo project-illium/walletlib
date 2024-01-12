@@ -133,15 +133,11 @@ inputLoop:
 					return nil, err
 				}
 				if bytes.Equal(privIn.ScriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
-					rawPub, err := privkey.GetPublic().Raw()
+					unlockingParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
 					if err != nil {
 						return nil, err
 					}
-					unlockingParams, err := zk.MakeMultisigUnlockingParams([][]byte{rawPub}, [][]byte{sig}, sigHash)
-					if err != nil {
-						return nil, err
-					}
-					rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
+					rawTx.PrivateInputs[i].UnlockingParams = []byte(unlockingParams)
 				} else {
 					rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
 				}
@@ -233,15 +229,11 @@ inputLoop:
 					return nil, err
 				}
 				if bytes.Equal(privIn.ScriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
-					rawPub, err := privkey.GetPublic().Raw()
+					unlockingParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
 					if err != nil {
 						return nil, err
 					}
-					unlockingParams, err := zk.MakeMultisigUnlockingParams([][]byte{rawPub}, [][]byte{sig}, sigHash)
-					if err != nil {
-						return nil, err
-					}
-					rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
+					rawTx.PrivateInputs[i].UnlockingParams = []byte(unlockingParams)
 				} else {
 					rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
 				}

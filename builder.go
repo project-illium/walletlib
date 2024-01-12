@@ -280,7 +280,6 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 
 func shuffleTransaction(raw *RawTransaction) {
 	if raw.Tx.GetStandardTransaction() != nil {
-		mrand.Seed(time.Now().Unix())
 		mrand.Shuffle(len(raw.Tx.GetStandardTransaction().Nullifiers), func(i, j int) {
 			raw.Tx.GetStandardTransaction().Nullifiers[i], raw.Tx.GetStandardTransaction().Nullifiers[j] = raw.Tx.GetStandardTransaction().Nullifiers[j], raw.Tx.GetStandardTransaction().Nullifiers[i]
 			raw.PrivateInputs[i], raw.PrivateInputs[j] = raw.PrivateInputs[j], raw.PrivateInputs[i]
