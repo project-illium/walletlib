@@ -570,6 +570,10 @@ github.com/project-illium/ilxd v0.0.6-alpha.0.20240112000317-4f1a437c976a h1:ZPv
 github.com/project-illium/ilxd v0.0.6-alpha.0.20240112000317-4f1a437c976a/go.mod h1:QbiyxZVg7WUkMrkE6onp1Wn7h83L2xCUGtmn9+Td/F8=
 github.com/project-illium/ilxd v0.0.6-alpha.0.20240112000742-e799e112da40 h1:oqI49y2xlct+5hYM0hWmIYKx16n+sQVZUccS3jrcg8I=
 github.com/project-illium/ilxd v0.0.6-alpha.0.20240112000742-e799e112da40/go.mod h1:QbiyxZVg7WUkMrkE6onp1Wn7h83L2xCUGtmn9+Td/F8=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240115001958-e1b499378c4e h1:6n0RR9eJ5rn+wEgt6NYeTb7VKAucsjkyYXbsMtUfu9M=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240115001958-e1b499378c4e/go.mod h1:bk8sXDiJkRlvBStT7qt3bLCj0S1D8n1OTZ8qjMthhQs=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240115150226-356cbfe3eeeb h1:QxT0q/46SS5fYIXzp6D2cG+LuX5iZBL/dRS1onkOKjA=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240115150226-356cbfe3eeeb/go.mod h1:bk8sXDiJkRlvBStT7qt3bLCj0S1D8n1OTZ8qjMthhQs=
 github.com/project-illium/weightedrand/v2 v2.1.0 h1:8zVDjthKwP0yfHt3uC3fTEqH0KJ5AwCL02YYx+cpdb8=
 github.com/project-illium/weightedrand/v2 v2.1.0/go.mod h1:/AeYfjb6TF9oSmsWXWZQ6H2+5NAQB6zdcCJbhDZxAd0=
 github.com/prometheus/client_golang v0.8.0/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
@@ -611,6 +615,8 @@ github.com/quic-go/qtls-go1-20 v0.3.3 h1:17/glZSLI9P9fDAeyCHBFSWSqJcwx1byhLwP5eU
 github.com/quic-go/qtls-go1-20 v0.3.3/go.mod h1:X9Nh97ZL80Z+bX/gUXMbipO6OxdiDi58b/fMC9mAL+k=
 github.com/quic-go/quic-go v0.38.1 h1:M36YWA5dEhEeT+slOu/SwMEucbYd0YFidxG3KlGPZaE=
 github.com/quic-go/quic-go v0.38.1/go.mod h1:ijnZM7JsFIkp4cRyjxJNIzdSfCLmUMg9wdyhGmg+SN4=
+github.com/quic-go/quic-go v0.38.2 h1:VWv/6gxIoB8hROQJhx1JEyiegsUQ+zMN3em3kynTGdg=
+github.com/quic-go/quic-go v0.38.2/go.mod h1:ijnZM7JsFIkp4cRyjxJNIzdSfCLmUMg9wdyhGmg+SN4=
 github.com/quic-go/webtransport-go v0.5.3 h1:5XMlzemqB4qmOlgIus5zB45AcZ2kCgCy2EptUrfOPWU=
 github.com/quic-go/webtransport-go v0.5.3/go.mod h1:OhmmgJIzTTqXK5xvtuX0oBpLV2GkLWNDA+UeTGJXErU=
 github.com/raulk/go-watchdog v1.3.0 h1:oUmdlHxdkXRJlwfG0O9omj8ukerm8MEQavSiDTEtBsk=

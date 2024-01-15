@@ -2,18 +2,18 @@ syntax = "proto3";
 option go_package = "../pb";
 
 message SpendNote {
-    string address                   = 1;
-    bytes commitment                 = 2;
-    uint32 key_index                 = 3;
-    bytes scriptHash                 = 4;
-    uint64 amount                    = 5;
-    bytes asset_ID                   = 6;
-    bytes state                      = 7;
-    bytes salt                       = 8;
-    uint64 acc_index                 = 9;
-    bool watch_only                  = 10;
-    bool staked                      = 11;
-    int64 locked_until               = 12;
+    string address               = 1;
+    bytes commitment             = 2;
+    uint32 key_index             = 3;
+    bytes scriptHash             = 4;
+    uint64 amount                = 5;
+    bytes asset_ID               = 6;
+    bytes state                  = 7;
+    bytes salt                   = 8;
+    uint64 acc_index             = 9;
+    bool watch_only              = 10;
+    bool staked                  = 11;
+    int64 locked_until           = 12;
     LockingScript locking_script = 13;
 }
 
@@ -26,13 +26,13 @@ message WalletTransaction {
 
     message IO {
         oneof io_type {
-            TxIO tx_io = 1;
+            TxIO tx_io      = 1;
             Unknown unknown = 2;
         }
 
         message TxIO {
             string address = 1;
-            uint64 amount   = 2;
+            uint64 amount  = 2;
         }
 
         message Unknown {}
@@ -40,15 +40,15 @@ message WalletTransaction {
 }
 
 message AddrInfo {
-    string addr                      = 1;
-    LockingScript locking_script = 2;
-    bytes script_hash                = 3;
-    bytes view_priv_key              = 4;
-    uint32 key_index                 = 5;
-    bool watch_only                  = 6;
+    string addr                   = 1;
+    LockingScript locking_script  = 2;
+    bytes script_hash             = 3;
+    bytes view_priv_key           = 4;
+    uint32 key_index              = 5;
+    bool watch_only               = 6;
 }
 
 message LockingScript {
-    bytes script_commitment      = 1;
+    bytes script_commitment       = 1;
     repeated bytes locking_params = 2;
 }

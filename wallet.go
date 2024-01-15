@@ -43,10 +43,12 @@ const (
 
 type Wallet struct {
 	ds             repo.Datastore
+	prover         zk.Prover
 	params         *params.NetworkParams
 	keychain       *Keychain
 	nullifiers     map[types.Nullifier]types.ID
 	outputMetadata map[types.ID]*TxIO
+	inflightUtxos  map[types.ID]struct{}
 	scanner        *TransactionScanner
 	accdb          *blockchain.AccumulatorDB
 	feePerKB       types.Amount
@@ -58,10 +60,12 @@ type Wallet struct {
 	newWallet      bool
 	birthday       time.Time
 
-	done       chan struct{}
-	mtx        sync.RWMutex
-	txSubMtx   sync.RWMutex
-	syncSubMtx sync.RWMutex
+	done        chan struct{}
+	mtx         sync.RWMutex
+	txSubMtx    sync.RWMutex
+	syncSubMtx  sync.RWMutex
+	metadataMtx sync.RWMutex
+	spendMtx    sync.RWMutex
 }
 
 func NewWallet(opts ...Option) (*Wallet, error) {
@@ -158,10 +162,12 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 
 	return &Wallet{
 		ds:             ds,
+		prover:         cfg.prover,
 		params:         cfg.params,
 		keychain:       keychain,
 		nullifiers:     nullifiers,
 		outputMetadata: make(map[types.ID]*TxIO),
+		inflightUtxos:  make(map[types.ID]struct{}),
 		feePerKB:       fpkb,
 		chainClient:    cfg.chainClient,
 		accdb:          adb,
@@ -175,6 +181,8 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		mtx:            sync.RWMutex{},
 		txSubMtx:       sync.RWMutex{},
 		syncSubMtx:     sync.RWMutex{},
+		metadataMtx:    sync.RWMutex{},
+		spendMtx:       sync.RWMutex{},
 	}, nil
 }
 
@@ -565,8 +573,12 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					Address: addr,
 					Amount:  note.Amount,
 				})
+				w.spendMtx.Lock()
+				delete(w.inflightUtxos, types.NewID(out.Commitment))
+				w.spendMtx.Unlock()
 				log.Debugf("Wallet detected incoming output %s. Txid: %s in block %d", types.NewID(out.Commitment), tx.ID(), blk.Header.Height)
 			} else {
+				w.metadataMtx.Lock()
 				txio, ok := w.outputMetadata[types.NewID(out.Commitment)]
 				if ok {
 					outs = append(outs, txio)
@@ -574,6 +586,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				} else {
 					outs = append(outs, &Unknown{})
 				}
+				w.metadataMtx.Unlock()
 			}
 		}
 
@@ -602,6 +615,9 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					log.Errorf("Wallet connect block error: %s", err)
 					continue
 				}
+				w.spendMtx.Lock()
+				delete(w.inflightUtxos, commitment)
+				w.spendMtx.Unlock()
 				log.Debugf("Wallet detected stake tx. Txid: %s in block %d", tx.ID(), blk.Header.Height)
 			}
 		}

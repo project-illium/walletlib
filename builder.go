@@ -5,12 +5,14 @@
 package walletlib
 
 import (
+	"bytes"
 	"errors"
 	"github.com/project-illium/ilxd/blockchain"
 	"github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/transactions"
-	"github.com/project-illium/ilxd/zk/circuits/standard"
+	"github.com/project-illium/ilxd/zk"
+	"github.com/project-illium/ilxd/zk/circparams"
 	"github.com/project-illium/walletlib/pb"
 	mrand "math/rand"
 	"time"
@@ -20,15 +22,15 @@ const DefaultLocktimePrecision = 60 * 20
 
 type RawTransaction struct {
 	Tx             *transactions.Transaction
-	PrivateInputs  []standard.PrivateInput
-	PrivateOutputs []standard.PrivateOutput
+	PrivateInputs  []circparams.PrivateInput
+	PrivateOutputs []circparams.PrivateOutput
 }
 
 // RawInput represents either a commitment or a private input
 // Set one or the other fields but not both.
 type RawInput struct {
 	Commitment   []byte
-	PrivateInput *standard.PrivateInput
+	PrivateInput *circparams.PrivateInput
 }
 type RawOutput struct {
 	Addr   Address
@@ -43,8 +45,8 @@ type ProofsSource func(commitments ...types.ID) ([]*blockchain.InclusionProof, t
 func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange ChangeSource, fetchProofs ProofsSource, feePerKB types.Amount) (*RawTransaction, error) {
 	raw := &RawTransaction{
 		Tx:             &transactions.Transaction{},
-		PrivateInputs:  []standard.PrivateInput{},
-		PrivateOutputs: []standard.PrivateOutput{},
+		PrivateInputs:  []circparams.PrivateInput{},
+		PrivateOutputs: []circparams.PrivateOutput{},
 	}
 
 	standardTx := &transactions.StandardTransaction{
@@ -130,8 +132,8 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 func BuildSweepTransaction(toAddr Address, inputNotes []*pb.SpendNote, fetchProofs ProofsSource, feePerKB types.Amount) (*RawTransaction, error) {
 	raw := &RawTransaction{
 		Tx:             &transactions.Transaction{},
-		PrivateInputs:  []standard.PrivateInput{},
-		PrivateOutputs: []standard.PrivateOutput{},
+		PrivateInputs:  []circparams.PrivateInput{},
+		PrivateOutputs: []circparams.PrivateOutput{},
 	}
 
 	fee := ComputeFee(len(inputNotes), 1, feePerKB)
@@ -199,40 +201,39 @@ func selectInputs(amount types.Amount, fetchInputs InputSource, feePerKB types.A
 	}
 }
 
-func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nullifier, standard.PrivateInput, error) {
-	privIn := standard.PrivateInput{
-		SpendNote: types.SpendNote{
-			Amount: types.Amount(note.Amount),
-		},
+func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nullifier, circparams.PrivateInput, error) {
+	privIn := circparams.PrivateInput{
+		Amount:          types.Amount(note.Amount),
+		AssetID:         types.NewID(note.Asset_ID),
+		Salt:            types.NewID(note.Salt),
 		CommitmentIndex: proof.Index,
-		InclusionProof: standard.InclusionProof{
+		InclusionProof: circparams.InclusionProof{
 			Hashes: proof.Hashes,
 			Flags:  proof.Flags,
 		},
-		ScriptCommitment: note.LockingScript.ScriptCommitment,
-		ScriptParams:     note.LockingScript.LockingParams,
+		Script:          selectScript(note.LockingScript.ScriptCommitment),
+		LockingParams:   note.LockingScript.LockingParams,
+		UnlockingParams: "",
 	}
-	copy(privIn.Salt[:], note.Salt)
-	copy(privIn.AssetID[:], note.Asset_ID)
 
 	state := new(types.State)
 	if err := state.Deserialize(note.State); err != nil {
-		return types.Nullifier{}, standard.PrivateInput{}, err
+		return types.Nullifier{}, circparams.PrivateInput{}, err
 	}
 	privIn.State = *state
 
-	nullifier, err := types.CalculateNullifier(proof.Index, privIn.Salt, privIn.ScriptCommitment, privIn.ScriptParams...)
+	nullifier, err := types.CalculateNullifier(proof.Index, privIn.Salt, note.LockingScript.ScriptCommitment, note.LockingScript.LockingParams...)
 	if err != nil {
-		return types.Nullifier{}, standard.PrivateInput{}, err
+		return types.Nullifier{}, circparams.PrivateInput{}, err
 	}
 	return nullifier, privIn, nil
 }
 
-func buildOutput(addr Address, amt types.Amount, state types.State) (*transactions.Output, standard.PrivateOutput, error) {
+func buildOutput(addr Address, amt types.Amount, state types.State) (*transactions.Output, circparams.PrivateOutput, error) {
 	addrScriptHash := addr.ScriptHash()
 	salt, err := types.RandomSalt()
 	if err != nil {
-		return nil, standard.PrivateOutput{}, err
+		return nil, circparams.PrivateOutput{}, err
 	}
 	outputNote := types.SpendNote{
 		ScriptHash: addrScriptHash,
@@ -244,20 +245,20 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 
 	outputCommitment, err := outputNote.Commitment()
 	if err != nil {
-		return nil, standard.PrivateOutput{}, err
+		return nil, circparams.PrivateOutput{}, err
 	}
 
 	serializedOutputNote, err := outputNote.Serialize()
 	if err != nil {
-		return nil, standard.PrivateOutput{}, err
+		return nil, circparams.PrivateOutput{}, err
 	}
 	toViewKey, ok := addr.ViewKey().(*crypto.Curve25519PublicKey)
 	if !ok {
-		return nil, standard.PrivateOutput{}, errors.New("address view key is not curve25519")
+		return nil, circparams.PrivateOutput{}, errors.New("address view key is not curve25519")
 	}
 	outputCipherText, err := toViewKey.Encrypt(serializedOutputNote)
 	if err != nil {
-		return nil, standard.PrivateOutput{}, err
+		return nil, circparams.PrivateOutput{}, err
 	}
 
 	txOut := &transactions.Output{
@@ -265,14 +266,12 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 		Ciphertext: outputCipherText,
 	}
 
-	privOut := standard.PrivateOutput{
-		SpendNote: types.SpendNote{
-			ScriptHash: addrScriptHash,
-			Amount:     amt,
-			Salt:       outputNote.Salt,
-			AssetID:    outputNote.AssetID,
-			State:      outputNote.State,
-		},
+	privOut := circparams.PrivateOutput{
+		ScriptHash: addrScriptHash,
+		Amount:     amt,
+		Salt:       outputNote.Salt,
+		AssetID:    outputNote.AssetID,
+		State:      outputNote.State,
 	}
 
 	return txOut, privOut, nil
@@ -289,4 +288,15 @@ func shuffleTransaction(raw *RawTransaction) {
 			raw.PrivateOutputs[i], raw.PrivateOutputs[j] = raw.PrivateOutputs[j], raw.PrivateOutputs[i]
 		})
 	}
+}
+
+func selectScript(scriptCommitment []byte) string {
+	if bytes.Equal(scriptCommitment, zk.BasicTransferScriptCommitment()) {
+		return zk.BasicTransferScript()
+	} else if bytes.Equal(scriptCommitment, zk.MultisigScriptCommitment()) {
+		return zk.MultisigScript()
+	} else if bytes.Equal(scriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
+		return zk.TimelockedMultisigScript()
+	}
+	return ""
 }

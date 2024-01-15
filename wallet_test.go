@@ -64,6 +64,7 @@ func TestWallet(t *testing.T) {
 			},
 		}),
 		Params(&params.RegestParams),
+		Prover(&zk.MockProver{}),
 	}...)
 	assert.NoError(t, err)
 
@@ -205,6 +206,7 @@ func TestTransactions(t *testing.T) {
 			},
 		}),
 		Params(&params.RegestParams),
+		Prover(&zk.MockProver{}),
 	}...)
 	assert.NoError(t, err)
 
@@ -241,9 +243,23 @@ func TestTransactions(t *testing.T) {
 	_, err = w.CreateRawTransaction([]*RawInput{{Commitment: notes[0].Commitment}}, []*RawOutput{{Addr: addr, Amount: amt}}, true, 0)
 	assert.NoError(t, err)
 
+	// This should error due to spend lock on the utxo
+	err = w.Stake([]types.ID{types.NewID(notes[0].Commitment)})
+	assert.Error(t, err)
+
+	// Delete the spend lock
+	delete(w.inflightUtxos, types.NewID(notes[0].Commitment))
+
 	// Stake
 	err = w.Stake([]types.ID{types.NewID(notes[0].Commitment)})
 	assert.NoError(t, err)
+
+	// This should error due to spend lock
+	_, err = w.SweepWallet(addr, 10)
+	assert.Error(t, err)
+
+	// Delete the spend lock
+	delete(w.inflightUtxos, types.NewID(notes[0].Commitment))
 
 	// Sweep
 	_, err = w.SweepWallet(addr, 10)
@@ -257,6 +273,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	broadcastChan := make(chan *transactions.Transaction)
 	w, err := NewWallet([]Option{
+		Prover(&zk.MockProver{}),
 		Datastore(ds),
 		DataDir(repo.DefaultHomeDir),
 		BlockchainSource(&client.InternalClient{

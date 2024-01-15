@@ -9,6 +9,7 @@ import (
 	"github.com/project-illium/ilxd/params"
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
+	"github.com/project-illium/ilxd/zk"
 	"go.uber.org/zap"
 	"time"
 )
@@ -23,6 +24,17 @@ type Option func(cfg *config) error
 func Params(params *params.NetworkParams) Option {
 	return func(cfg *config) error {
 		cfg.params = params
+		return nil
+	}
+}
+
+// Prover is an instance of the zk.Prover interface that is
+// used to create the zk proofs.
+//
+// This option is required.
+func Prover(prover zk.Prover) Option {
+	return func(cfg *config) error {
+		cfg.prover = prover
 		return nil
 	}
 }
@@ -96,6 +108,7 @@ func Logger(logger *zap.SugaredLogger) Option {
 
 type config struct {
 	datastore   repo.Datastore
+	prover      zk.Prover
 	params      *params.NetworkParams
 	feePerKB    types.Amount
 	chainClient BlockchainClient
@@ -108,6 +121,9 @@ type config struct {
 func (c *config) validate() error {
 	if c.params == nil {
 		return errors.New("params cannot be nil")
+	}
+	if c.prover == nil {
+		return errors.New("prover cannot be nil")
 	}
 	if c.dataDir == "" {
 		return errors.New("dataDir cannot be empty")

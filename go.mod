@@ -8,7 +8,7 @@ require (
 	github.com/ipfs/go-ds-badger v0.3.0
 	github.com/libp2p/go-libp2p v0.31.0
 	github.com/multiformats/go-multiaddr v0.11.0
-	github.com/project-illium/ilxd v0.0.6-alpha.0.20240112000742-e799e112da40
+	github.com/project-illium/ilxd v0.0.6-alpha.0.20240115150226-356cbfe3eeeb
 	github.com/stretchr/testify v1.8.4
 	github.com/tyler-smith/go-bip39 v1.1.0
 	go.uber.org/zap v1.25.0
@@ -119,7 +119,7 @@ require (
 	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/qtls-go1-20 v0.3.3 // indirect
-	github.com/quic-go/quic-go v0.38.1 // indirect
+	github.com/quic-go/quic-go v0.38.2 // indirect
 	github.com/quic-go/webtransport-go v0.5.3 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/rogpeppe/go-internal v1.10.0 // indirect
@@ -147,3 +147,5 @@ require (
 	lukechampine.com/blake3 v1.2.1 // indirect
 	nhooyr.io/websocket v1.8.7 // indirect
 )
+
+replace github.com/project-illium/ilxd => /home/chris/workspace/ilxd
