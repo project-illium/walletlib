@@ -46,5 +46,5 @@ func EstimateSerializedSize(inputs, outputs int, addChangeOutput bool) types.Amo
 		outputs += 1
 	}
 
-	return types.Amount(baseSize + txoRootSize + (nullifierSize * inputs) + (outputSize * outputs) + zk.MockProofSize)
+	return types.Amount(baseSize + txoRootSize + (nullifierSize * inputs) + (outputSize * outputs) + zk.EstimatedProofSize)
 }
