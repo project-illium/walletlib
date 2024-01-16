@@ -459,6 +459,12 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 		return nil, err
 	}
 
+	for i, in := range rawTx.PrivateInputs {
+		if in.Script == "" && inputs[i].PrivateInput != nil {
+			rawTx.PrivateInputs[i].Script = inputs[i].PrivateInput.Script
+		}
+	}
+
 	for i, o := range rawTx.Tx.Outputs() {
 		if i < len(outputs) {
 			w.metadataMtx.Lock()
@@ -616,6 +622,10 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 		Script:          selectScript(inputNote.LockingScript.ScriptCommitment),
 		LockingParams:   inputNote.LockingScript.LockingParams,
 		UnlockingParams: signatureScript(spendSig),
+	}
+
+	if privateInput.Script == "" && in.PrivateInput != nil {
+		privateInput.Script = in.PrivateInput.Script
 	}
 
 	state := new(types.State)
