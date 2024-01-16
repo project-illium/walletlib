@@ -34,7 +34,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 		feePerKB = w.feePerKB
 	}
 
-	rawTx, publicParams, err := func() (*RawTransaction, zk.Parameters, error) {
+	rawTx, publicParams, deleteFunc, err := func() (*RawTransaction, zk.Parameters, func(), error) {
 		defer w.mtx.RUnlock()
 		defer w.spendMtx.Unlock()
 
@@ -117,7 +117,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 		// Build tx
 		rawTx, err := BuildTransaction([]*RawOutput{{toAddr, amount, toState}}, inputSource, w.keychain.Address, w.GetInclusionProofs, feePerKB)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		outCommitment := rawTx.Tx.Outputs()[0].Commitment
@@ -134,7 +134,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 		// Sign the inputs
 		sigHash, err := rawTx.Tx.GetStandardTransaction().SigHash()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	inputLoop:
 		for i, privIn := range rawTx.PrivateInputs {
@@ -142,16 +142,16 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 				if n.AccIndex == privIn.CommitmentIndex {
 					privkey, err := w.keychain.spendKey(n.KeyIndex)
 					if err != nil {
-						return nil, nil, err
+						return nil, nil, nil, err
 					}
 					sig, err := privkey.Sign(sigHash)
 					if err != nil {
-						return nil, nil, err
+						return nil, nil, nil, err
 					}
 					if bytes.Equal(n.LockingScript.ScriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
 						unlockingParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
 						if err != nil {
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
 						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
 					} else {
@@ -163,18 +163,27 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 		}
 		publicParams, err := rawTx.Tx.GetStandardTransaction().ToCircuitParams()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
+		toDelete := make([]types.ID, 0, len(rawTx.PrivateInputs))
 	commitmentLoadLoop:
 		for _, privIn := range rawTx.PrivateInputs {
 			for _, n := range notes {
 				if n.AccIndex == privIn.CommitmentIndex {
 					w.inflightUtxos[types.NewID(n.Commitment)] = struct{}{}
+					toDelete = append(toDelete, types.NewID(n.Commitment))
 					continue commitmentLoadLoop
 				}
 			}
 		}
-		return rawTx, publicParams, nil
+		deleteFunc := func() {
+			w.spendMtx.Lock()
+			defer w.spendMtx.Unlock()
+			for _, id := range toDelete {
+				delete(w.inflightUtxos, id)
+			}
+		}
+		return rawTx, publicParams, deleteFunc, nil
 	}()
 	if err != nil {
 		return nil, err
@@ -188,6 +197,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 
 	proof, err := w.prover.Prove(zk.StandardValidationProgram(), privateParams, publicParams)
 	if err != nil {
+		deleteFunc()
 		return nil, err
 	}
 
@@ -203,7 +213,7 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 		feePerKB = w.feePerKB
 	}
 
-	rawTx, publicParams, err := func() (*RawTransaction, zk.Parameters, error) {
+	rawTx, publicParams, deleteFunc, err := func() (*RawTransaction, zk.Parameters, func(), error) {
 		defer w.mtx.RUnlock()
 		defer w.spendMtx.Unlock()
 
@@ -211,13 +221,13 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 			Prefix: NotesDatastoreKeyPrefix,
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		notes := make([]*pb.SpendNote, 0, 1)
 		for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
 			var note pb.SpendNote
 			if err := proto.Unmarshal(result.Value, &note); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if time.Unix(note.LockedUntil, 0).After(time.Now()) {
 				continue
@@ -232,13 +242,13 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 		}
 
 		if len(notes) == 0 {
-			return nil, nil, errors.New("no spendable utxos in wallet")
+			return nil, nil, nil, errors.New("no spendable utxos in wallet")
 		}
 
 		// Build tx
 		rawTx, err := BuildSweepTransaction(toAddr, notes, w.GetInclusionProofs, feePerKB)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		outCommitment := rawTx.Tx.Outputs()[0].Commitment
@@ -255,7 +265,7 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 		// Sign the inputs
 		sigHash, err := rawTx.Tx.GetStandardTransaction().SigHash()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	inputLoop:
 		for i, privIn := range rawTx.PrivateInputs {
@@ -263,16 +273,16 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 				if n.AccIndex == privIn.CommitmentIndex {
 					privkey, err := w.keychain.spendKey(n.KeyIndex)
 					if err != nil {
-						return nil, nil, err
+						return nil, nil, nil, err
 					}
 					sig, err := privkey.Sign(sigHash)
 					if err != nil {
-						return nil, nil, err
+						return nil, nil, nil, err
 					}
 					if bytes.Equal(n.LockingScript.ScriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
 						unlockingParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
 						if err != nil {
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
 						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
 					} else {
@@ -284,18 +294,27 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 		}
 		publicParams, err := rawTx.Tx.GetStandardTransaction().ToCircuitParams()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
+		toDelete := make([]types.ID, 0, len(rawTx.PrivateInputs))
 	commitmentLoadLoop:
 		for _, privIn := range rawTx.PrivateInputs {
 			for _, n := range notes {
 				if n.AccIndex == privIn.CommitmentIndex {
 					w.inflightUtxos[types.NewID(n.Commitment)] = struct{}{}
+					toDelete = append(toDelete, types.NewID(n.Commitment))
 					continue commitmentLoadLoop
 				}
 			}
 		}
-		return rawTx, publicParams, nil
+		deleteFunc := func() {
+			w.spendMtx.Lock()
+			defer w.spendMtx.Unlock()
+			for _, id := range toDelete {
+				delete(w.inflightUtxos, id)
+			}
+		}
+		return rawTx, publicParams, deleteFunc, nil
 	}()
 	if err != nil {
 		return nil, err
@@ -309,6 +328,7 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 
 	proof, err := w.prover.Prove(zk.StandardValidationProgram(), privateParams, publicParams)
 	if err != nil {
+		deleteFunc()
 		return nil, err
 	}
 
@@ -647,50 +667,50 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	w.mtx.RLock()
 	w.spendMtx.Lock()
 
-	tx, privateParams, publicParams, err := func() (*transactions.StakeTransaction, zk.Parameters, zk.Parameters, error) {
+	tx, privateParams, publicParams, deleteFunc, err := func() (*transactions.StakeTransaction, zk.Parameters, zk.Parameters, func(), error) {
 		defer w.mtx.RUnlock()
 		defer w.spendMtx.Unlock()
 
 		if _, ok := w.inflightUtxos[commitment]; ok {
-			return nil, nil, nil, errors.New("staked utxo is currently locked by another prove function")
+			return nil, nil, nil, nil, errors.New("staked utxo is currently locked by another prove function")
 		}
 
 		noteBytes, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		var note pb.SpendNote
 		if err := proto.Unmarshal(noteBytes, &note); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		networkKey, err := w.keychain.NetworkKey()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		peerID, err := peer.IDFromPrivateKey(networkKey)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		peerIDBytes, err := peerID.Marshal()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		proofs, txoRoot, err := w.GetInclusionProofs(commitment)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		if len(proofs) == 0 {
-			return nil, nil, nil, errors.New("error fetch inclusion proof")
+			return nil, nil, nil, nil, errors.New("error fetch inclusion proof")
 		}
 
 		nullifier, privateInput, err := buildInput(&note, proofs[0])
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		tx := &transactions.StakeTransaction{
@@ -705,27 +725,27 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 
 		sigHash, err := tx.SigHash()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		sig, err := networkKey.Sign(sigHash)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		tx.Signature = sig
 
 		privkey, err := w.keychain.spendKey(note.KeyIndex)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		txSig, err := privkey.Sign(sigHash)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		if bytes.Equal(note.LockingScript.ScriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
 			unlockingParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{txSig}, sigHash)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 			privateInput.UnlockingParams = unlockingParams
 		} else {
@@ -746,11 +766,16 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 
 		publicParams, err := tx.ToCircuitParams()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		w.inflightUtxos[commitment] = struct{}{}
-		return tx, privateParams, publicParams, nil
+		deleteFunc := func() {
+			w.spendMtx.Lock()
+			defer w.spendMtx.Unlock()
+			delete(w.inflightUtxos, commitment)
+		}
+		return tx, privateParams, publicParams, deleteFunc, nil
 	}()
 	if err != nil {
 		return nil, err
@@ -758,6 +783,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 
 	proof, err := w.prover.Prove(zk.StakeValidationProgram(), privateParams, publicParams)
 	if err != nil {
+		deleteFunc()
 		return nil, err
 	}
 	tx.Proof = proof
