@@ -382,26 +382,46 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			if commitment, ok := w.nullifiers[n]; ok {
 				b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
 				if err != nil {
-					log.WithCaller(true).Error("Error connecting block to wallet", log.Args("error", err))
+					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+						"block":  blk.ID().String(),
+						"height": blk.Header.Height,
+						"error":  err,
+					}))
 					continue
 				}
 				var note pb.SpendNote
 				if err := proto.Unmarshal(b, &note); err != nil {
-					log.WithCaller(true).Error("Error connecting block to wallet", log.Args("error", err))
+					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+						"block":  blk.ID().String(),
+						"height": blk.Header.Height,
+						"error":  err,
+					}))
 					continue
 				}
 				inAddr, err := DecodeAddress(note.Address, w.params)
 				if err != nil {
-					log.WithCaller(true).Error("Error connecting block to wallet", log.Args("error", err))
+					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+						"block":  blk.ID().String(),
+						"height": blk.Header.Height,
+						"error":  err,
+					}))
 					continue
 				}
 				walletOut += types.Amount(note.Amount)
 				if err := w.ds.Delete(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String())); err != nil {
-					log.WithCaller(true).Error("Error connecting block to wallet", log.Args("error", err))
+					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+						"block":  blk.ID().String(),
+						"height": blk.Header.Height,
+						"error":  err,
+					}))
 					continue
 				}
 				if err := w.ds.Delete(context.Background(), datastore.NewKey(NullifierKeyPrefix+n.String())); err != nil {
-					log.WithCaller(true).Error("Error connecting block to wallet", log.Args("error", err))
+					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+						"block":  blk.ID().String(),
+						"height": blk.Header.Height,
+						"error":  err,
+					}))
 					continue
 				}
 				delete(w.nullifiers, n)
@@ -412,7 +432,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					Amount:  types.Amount(note.Amount),
 				})
 				log.Debug("Wallet detected spend of nullifier", log.ArgsFromMap(map[string]any{
-					"nullifier": n,
+					"nullifier": n.String(),
 					"height":    blk.Header.Height,
 				}))
 			} else {
@@ -431,7 +451,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -442,7 +462,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if err := note.Deserialize(match.DecryptedNote); err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -453,7 +473,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					accumulator.DropProof(out.Commitment)
 					errStr := fmt.Sprintf("invalid commitment: %s", err)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -463,7 +483,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					accumulator.DropProof(out.Commitment)
 					errStr := "decrypted note does not match commitment"
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -473,7 +493,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					accumulator.DropProof(out.Commitment)
 					errStr := "note assetID not illium coin ID"
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -483,7 +503,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					accumulator.DropProof(out.Commitment)
 					errStr := "note amount is zero"
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -506,7 +526,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 						accumulator.DropProof(out.Commitment)
 						errStr := fmt.Sprintf("error computing script hash: %s", err)
 						log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-							"block":  blk.ID(),
+							"block":  blk.ID().String(),
 							"height": blk.Header.Height,
 							"error":  errStr,
 						}))
@@ -521,7 +541,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 							accumulator.DropProof(out.Commitment)
 							errStr := fmt.Sprintf("error unmarshaling view key: %s", err)
 							log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-								"block":  blk.ID(),
+								"block":  blk.ID().String(),
 								"height": blk.Header.Height,
 								"error":  errStr,
 							}))
@@ -533,7 +553,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 							accumulator.DropProof(out.Commitment)
 							errStr := fmt.Sprintf("error creating timelocked address: %s", err)
 							log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-								"block":  blk.ID(),
+								"block":  blk.ID().String(),
 								"height": blk.Header.Height,
 								"error":  errStr,
 							}))
@@ -550,7 +570,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					accumulator.DropProof(out.Commitment)
 					errStr := "note doesn't match script hash"
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -562,7 +582,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					accumulator.DropProof(out.Commitment)
 					errStr := fmt.Sprintf("error serializing state: %s", err)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -590,7 +610,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if err != nil {
 					errStr := fmt.Sprintf("error marshalling note: %s", err)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -600,7 +620,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					accumulator.DropProof(out.Commitment)
 					errStr := "commitment already exists in database"
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  errStr,
 					}))
@@ -610,7 +630,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(out.Commitment)), ser); err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -620,7 +640,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -630,7 +650,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NullifierKeyPrefix+nullifier.String()), out.Commitment); err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -641,7 +661,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				if err != nil {
 					accumulator.DropProof(out.Commitment)
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -659,8 +679,8 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				delete(w.inflightUtxos, types.NewID(out.Commitment))
 				w.spendMtx.Unlock()
 				log.Debug("Wallet detected incoming output", log.ArgsFromMap(map[string]any{
-					"commitment": types.NewID(out.Commitment),
-					"txid":       tx.ID(),
+					"commitment": types.NewID(out.Commitment).String(),
+					"txid":       tx.ID().String(),
 					"height":     blk.Header.Height,
 				}))
 			} else {
@@ -683,7 +703,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				b, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
 				if err != nil {
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -692,7 +712,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				var note pb.SpendNote
 				if err := proto.Unmarshal(b, &note); err != nil {
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -703,7 +723,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				ser, err := proto.Marshal(&note)
 				if err != nil {
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -711,7 +731,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 				if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()), ser); err != nil {
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -721,7 +741,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				delete(w.inflightUtxos, commitment)
 				w.spendMtx.Unlock()
 				log.Debug("Wallet detected stake tx", log.ArgsFromMap(map[string]any{
-					"txid":   tx.ID(),
+					"txid":   tx.ID().String(),
 					"height": blk.Header.Height,
 				}))
 			}
@@ -734,7 +754,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 		if w.chainClient.IsFullClient() {
 			if err := accdb.Commit(accumulator, blk.Header.Height, flushMode); err != nil {
 				log.WithCaller(true).Error("Error committing accumulator", log.ArgsFromMap(map[string]any{
-					"block":  blk.ID(),
+					"block":  blk.ID().String(),
 					"height": blk.Header.Height,
 					"error":  err,
 				}))
@@ -757,7 +777,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			ser, err := proto.Marshal(wtx)
 			if err != nil {
 				log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-					"block":  blk.ID(),
+					"block":  blk.ID().String(),
 					"height": blk.Header.Height,
 					"error":  err,
 				}))
@@ -765,7 +785,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			}
 			if err := w.ds.Put(context.Background(), datastore.NewKey(TransactionDatastoreKeyPrefix+tx.ID().String()), ser); err != nil {
 				log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-					"block":  blk.ID(),
+					"block":  blk.ID().String(),
 					"height": blk.Header.Height,
 					"error":  err,
 				}))
@@ -777,7 +797,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
 				if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
 					log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
-						"block":  blk.ID(),
+						"block":  blk.ID().String(),
 						"height": blk.Header.Height,
 						"error":  err,
 					}))
@@ -790,7 +810,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				amtStr = fmt.Sprintf("-%d", walletOut-walletIn)
 			}
 			log.Info(fmt.Sprintf("New %s wallet transaction", direction), log.ArgsFromMap(map[string]any{
-				"txid":   tx.ID(),
+				"txid":   tx.ID().String(),
 				"amount": amtStr,
 			}))
 			w.txSubMtx.RLock()
