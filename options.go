@@ -10,7 +10,7 @@ import (
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/zk"
-	"go.uber.org/zap"
+	"github.com/pterm/pterm"
 	"time"
 )
 
@@ -99,7 +99,7 @@ func Birthday(birthday time.Time) Option {
 }
 
 // Logger sets a logger for the wallet if desired.
-func Logger(logger *zap.SugaredLogger) Option {
+func Logger(logger *pterm.Logger) Option {
 	return func(cfg *config) error {
 		cfg.logger = logger
 		return nil
@@ -112,7 +112,7 @@ type config struct {
 	params      *params.NetworkParams
 	feePerKB    types.Amount
 	chainClient BlockchainClient
-	logger      *zap.SugaredLogger
+	logger      *pterm.Logger
 	dataDir     string
 	mnemonic    string
 	birthday    time.Time
