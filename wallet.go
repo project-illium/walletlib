@@ -24,6 +24,7 @@ import (
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
 	"github.com/project-illium/ilxd/zk"
+	"github.com/project-illium/logger"
 	"github.com/project-illium/walletlib/pb"
 	"github.com/pterm/pterm"
 	"github.com/tyler-smith/go-bip39"
@@ -157,7 +158,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 	if cfg.logger != nil {
 		log = cfg.logger
 	} else {
-		log = pterm.DefaultLogger.WithLevel(pterm.LogLevelInfo)
+		log = logger.DefaultLogger.WithLevel(pterm.LogLevelInfo)
 	}
 
 	return &Wallet{

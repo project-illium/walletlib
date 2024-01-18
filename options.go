@@ -10,7 +10,7 @@ import (
 	"github.com/project-illium/ilxd/repo"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/zk"
-	"github.com/pterm/pterm"
+	"github.com/project-illium/logger"
 	"time"
 )
 
@@ -99,7 +99,7 @@ func Birthday(birthday time.Time) Option {
 }
 
 // Logger sets a logger for the wallet if desired.
-func Logger(logger *pterm.Logger) Option {
+func Logger(logger *logger.Logger) Option {
 	return func(cfg *config) error {
 		cfg.logger = logger
 		return nil
@@ -112,7 +112,7 @@ type config struct {
 	params      *params.NetworkParams
 	feePerKB    types.Amount
 	chainClient BlockchainClient
-	logger      *pterm.Logger
+	logger      *logger.Logger
 	dataDir     string
 	mnemonic    string
 	birthday    time.Time
