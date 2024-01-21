@@ -10,16 +10,35 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.3.0-devel-ubuntu20.04
     steps:
       - uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y curl wget build-essential pkg-config libssl-dev
+          ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
+          dpkg-reconfigure --frontend noninteractive tzdata
 
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: 1.19
+          go-version: 1.21
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
       - name: Build
-        run: go build -v ./...
+        run: |
+          go mod tidy
+          make build
+          go build -v ./...
 
       - name: Test
         run: go test -v ./...
