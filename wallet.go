@@ -58,7 +58,6 @@ type Wallet struct {
 	chainClient    BlockchainClient
 	chainHeight    uint32
 	rescan         uint32
-	syncing        bool
 	newWallet      bool
 	birthday       time.Time
 
@@ -213,10 +212,6 @@ func (w *Wallet) Start() {
 		w.connectBlock(w.params.GenesisBlock, w.scanner, w.accdb, false)
 	}
 
-	w.syncing = true
-	defer func() {
-		w.syncing = false
-	}()
 	for {
 		from := w.chainHeight + 1
 		blks, bestHeight, err := w.chainClient.GetBlocks(from, from+maxBatchSize)
@@ -328,10 +323,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 
 	getHeight := height + 1
 	log.Debug("Wallet rescan started", log.Args("height", getHeight))
-	w.syncing = true
-	defer func() {
-		w.syncing = false
-	}()
+
 	for {
 		blks, bestHeight, err := w.chainClient.GetBlocks(getHeight, getHeight+maxBatchSize)
 		if err != nil {
@@ -835,12 +827,10 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			w.txSubMtx.RUnlock()
 		}
 	}
-	if !w.syncing || matchedTxs > 0 {
-		log.Debug("Wallet processed block", log.ArgsFromMap(map[string]any{
-			"height":  blk.Header.Height,
-			"matches": matchedTxs,
-		}))
-	}
+	log.WithCaller(true).Trace("Wallet processed block", log.ArgsFromMap(map[string]any{
+		"height":  blk.Header.Height,
+		"matches": matchedTxs,
+	}))
 }
 
 func (w *Wallet) MnemonicSeed() (string, error) {
