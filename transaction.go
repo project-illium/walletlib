@@ -206,7 +206,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 	return rawTx.Tx, nil
 }
 
-func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount) (*transactions.Transaction, error) {
+func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
 	w.mtx.RLock()
 	w.spendMtx.Lock()
 	if feePerKB == 0 {
@@ -217,28 +217,48 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount)
 		defer w.mtx.RUnlock()
 		defer w.spendMtx.Unlock()
 
-		results, err := w.ds.Query(context.Background(), query.Query{
-			Prefix: NotesDatastoreKeyPrefix,
-		})
-		if err != nil {
-			return nil, nil, nil, err
-		}
 		notes := make([]*pb.SpendNote, 0, 1)
-		for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
-			var note pb.SpendNote
-			if err := proto.Unmarshal(result.Value, &note); err != nil {
+		if len(inputCommitments) > 0 {
+			for _, commitment := range inputCommitments {
+				result, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+commitment.String()))
+				if err != nil {
+					return nil, nil, nil, err
+				}
+
+				var note pb.SpendNote
+				if err := proto.Unmarshal(result, &note); err != nil {
+					return nil, nil, nil, err
+				}
+
+				if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
+					continue
+				}
+
+				notes = append(notes, &note)
+			}
+		} else {
+			results, err := w.ds.Query(context.Background(), query.Query{
+				Prefix: NotesDatastoreKeyPrefix,
+			})
+			if err != nil {
 				return nil, nil, nil, err
 			}
-			if time.Unix(note.LockedUntil, 0).After(time.Now()) {
-				continue
+			for result, ok := results.NextSync(); ok; result, ok = results.NextSync() {
+				var note pb.SpendNote
+				if err := proto.Unmarshal(result.Value, &note); err != nil {
+					return nil, nil, nil, err
+				}
+				if time.Unix(note.LockedUntil, 0).After(time.Now()) {
+					continue
+				}
+				if note.WatchOnly {
+					continue
+				}
+				if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
+					continue
+				}
+				notes = append(notes, &note)
 			}
-			if note.WatchOnly {
-				continue
-			}
-			if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
-				continue
-			}
-			notes = append(notes, &note)
 		}
 
 		if len(notes) == 0 {

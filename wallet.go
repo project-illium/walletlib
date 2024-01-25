@@ -1022,8 +1022,8 @@ func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amoun
 	return tx.ID(), nil
 }
 
-func (w *Wallet) SweepWallet(toAddr Address, feePerKB types.Amount) (types.ID, error) {
-	tx, err := w.sweepAndProveTransaction(toAddr, feePerKB)
+func (w *Wallet) SweepWallet(toAddr Address, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
+	tx, err := w.sweepAndProveTransaction(toAddr, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
