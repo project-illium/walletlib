@@ -8,7 +8,7 @@ require (
 	github.com/ipfs/go-ds-badger v0.3.0
 	github.com/libp2p/go-libp2p v0.31.0
 	github.com/multiformats/go-multiaddr v0.11.0
-	github.com/project-illium/ilxd v0.0.6-alpha.0.20240118174746-777d952c61de
+	github.com/project-illium/ilxd v0.0.7-alpha.0.20240126170548-374683a75f93
 	github.com/project-illium/logger v0.0.0-20240118200101-2fb0847599c9
 	github.com/pterm/pterm v0.12.75
 	github.com/stretchr/testify v1.8.4
