@@ -512,7 +512,39 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 
 				locktime := int64(0)
-				if len(note.State) > 0 && len(note.State[0]) >= 8 {
+				if bytes.Equal(note.ScriptHash.Bytes(), publicAddrScriptHash) {
+					lockingParams := makePublicAddressLockingParams(addrInfo.LockingScript.LockingParams[0], addrInfo.LockingScript.LockingParams[1])
+					addr, err := NewPublicAddress(lockingParams, w.params)
+					if err != nil {
+						accumulator.DropProof(out.Commitment)
+						errStr := fmt.Sprintf("error creating timelocked address: %s", err)
+						log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+							"block":  blk.ID().String(),
+							"height": blk.Header.Height,
+							"error":  errStr,
+						}))
+						continue
+					}
+					sh := addr.ScriptHash()
+					if len(note.State) < 1 || !bytes.Equal(note.State[0], sh[:]) {
+						accumulator.DropProof(out.Commitment)
+						errStr := "output state doesn't match public address"
+						log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+							"block":  blk.ID().String(),
+							"height": blk.Header.Height,
+							"error":  errStr,
+						}))
+						continue
+					}
+					addrInfo.Addr = addr.String()
+					addrInfo.ScriptHash = publicAddrScriptHash
+					addrInfo.LockingScript.ScriptCommitment = zk.PublicAddressScriptCommitment()
+					addrInfo.LockingScript.LockingParams = [][]byte{
+						{0x01},
+						addrInfo.LockingScript.LockingParams[0],
+						addrInfo.LockingScript.LockingParams[1],
+					}
+				} else if len(note.State) > 0 && len(note.State[0]) >= 8 {
 					script := types.LockingScript{
 						ScriptCommitment: types.NewID(zk.TimelockedMultisigScriptCommitment()),
 						LockingParams: [][]byte{

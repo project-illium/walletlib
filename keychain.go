@@ -15,6 +15,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -240,6 +241,30 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 	}
 
 	return NewBasicAddress(script, viewKey.GetPublic(), kc.params)
+}
+
+func (kc *Keychain) PublicAddress() (Address, error) {
+	kc.mtx.RLock()
+	defer kc.mtx.RUnlock()
+
+	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+	if err != nil {
+		return nil, err
+	}
+
+	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
+	if err != nil {
+		return nil, err
+	}
+
+	var currentAddrInfo pb.AddrInfo
+	if err := proto.Unmarshal(ser, &currentAddrInfo); err != nil {
+		return nil, err
+	}
+
+	lockingParams := fmt.Sprintf("(cons 1 (cons 0x%x (cons 0x%x nil)))", currentAddrInfo.LockingScript.LockingParams[0], currentAddrInfo.LockingScript.LockingParams[1])
+
+	return NewPublicAddress(lockingParams, kc.params)
 }
 
 func (kc *Keychain) NewAddress() (Address, error) {
@@ -797,4 +822,8 @@ func (kc *Keychain) getViewKeys() ([]*icrypto.Curve25519PrivateKey, error) {
 		viewKeys = append(viewKeys, viewKey)
 	}
 	return viewKeys, nil
+}
+
+func makePublicAddressLockingParams(pubkeyX, pubkeyY []byte) string {
+	return fmt.Sprintf("(cons 1 (cons 0x%x (cons 0x%x nil)))", pubkeyX, pubkeyY)
 }

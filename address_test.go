@@ -37,3 +37,22 @@ func TestBasicAddress(t *testing.T) {
 		t.Error("Decoded address does not match encoded")
 	}
 }
+
+func TestPublicAddress(t *testing.T) {
+	_, pubkey, err := crypto.GenerateNovaKey(rand.Reader)
+	assert.NoError(t, err)
+
+	pubX, pubY := pubkey.(*crypto.NovaPublicKey).ToXY()
+
+	lockingParams := makePublicAddressLockingParams(pubX, pubY)
+
+	addr, err := NewPublicAddress(lockingParams, &params.MainnetParams)
+	assert.NoError(t, err)
+
+	addr2, err := DecodeAddress(addr.String(), &params.MainnetParams)
+	assert.NoError(t, err)
+
+	if addr2.String() != addr.String() {
+		t.Error("Decoded address does not match encoded")
+	}
+}

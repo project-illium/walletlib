@@ -5,6 +5,7 @@
 package walletlib
 
 import (
+	"bytes"
 	"github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
@@ -33,15 +34,17 @@ type scanWork struct {
 // transaction the accumulator and inclusion proofs, but that would require double
 // hashes of the accuumulator for every block.
 type TransactionScanner struct {
-	keys []*crypto.Curve25519PrivateKey
-	mtx  sync.RWMutex
+	keys        []*crypto.Curve25519PrivateKey
+	publicAddrs map[types.ID]*crypto.Curve25519PrivateKey
+	mtx         sync.RWMutex
 }
 
 // NewTransactionScanner returns a new TransactionScanner
 func NewTransactionScanner(keys ...*crypto.Curve25519PrivateKey) *TransactionScanner {
 	return &TransactionScanner{
-		keys: keys,
-		mtx:  sync.RWMutex{},
+		keys:        keys,
+		publicAddrs: make(map[types.ID]*crypto.Curve25519PrivateKey),
+		mtx:         sync.RWMutex{},
 	}
 }
 
@@ -125,22 +128,36 @@ func (s *TransactionScanner) ScanOutputs(blk *blocks.Block) map[types.ID]*ScanMa
 }
 
 func (s *TransactionScanner) scanHandler(workChan chan *scanWork, resultChan chan *ScanMatch, done chan struct{}) {
+workloop:
 	for {
 		select {
 		case w := <-workChan:
 			if w != nil {
+				output := w.tx.Outputs()[w.index]
+				if len(output.Ciphertext) >= 136 && bytes.Equal(output.Ciphertext[0:32], publicAddrScriptHash) {
+					for sh, k := range s.publicAddrs {
+						if bytes.Equal(output.Ciphertext[104:135], sh.Bytes()) {
+							resultChan <- &ScanMatch{
+								Key:           k,
+								Commitment:    types.NewID(output.Commitment),
+								DecryptedNote: output.Ciphertext,
+							}
+							continue workloop
+						}
+					}
+				}
 				for _, k := range s.keys {
-					decrypted, err := k.Decrypt(w.tx.Outputs()[w.index].Ciphertext)
+					decrypted, err := k.Decrypt(output.Ciphertext)
 					if err == nil {
 						resultChan <- &ScanMatch{
 							Key:           k,
-							Commitment:    types.NewID(w.tx.Outputs()[w.index].Commitment),
+							Commitment:    types.NewID(output.Commitment),
 							DecryptedNote: decrypted,
 						}
-					} else {
-						resultChan <- nil
+						continue workloop
 					}
 				}
+				resultChan <- nil
 			}
 		case <-done:
 			return
