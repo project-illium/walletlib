@@ -262,7 +262,7 @@ func (kc *Keychain) PublicAddress() (Address, error) {
 		return nil, err
 	}
 
-	lockingParams := fmt.Sprintf("(cons 1 (cons 0x%x (cons 0x%x nil)))", currentAddrInfo.LockingScript.LockingParams[0], currentAddrInfo.LockingScript.LockingParams[1])
+	lockingParams := makePublicAddressLockingParams(currentAddrInfo.LockingScript.LockingParams[0], currentAddrInfo.LockingScript.LockingParams[1])
 
 	return NewPublicAddress(lockingParams, kc.params)
 }
