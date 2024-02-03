@@ -539,11 +539,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 					addrInfo.Addr = addr.String()
 					addrInfo.ScriptHash = publicAddrScriptHash
 					addrInfo.LockingScript.ScriptCommitment = zk.PublicAddressScriptCommitment()
-					addrInfo.LockingScript.LockingParams = [][]byte{
-						{0x01},
-						addrInfo.LockingScript.LockingParams[0],
-						addrInfo.LockingScript.LockingParams[1],
-					}
+					addrInfo.LockingScript.LockingParams = nil
 				} else if len(note.State) > 0 && len(note.State[0]) >= 8 {
 					script := types.LockingScript{
 						ScriptCommitment: types.NewID(zk.TimelockedMultisigScriptCommitment()),
@@ -915,6 +911,10 @@ func (w *Wallet) NewAddress() (Address, error) {
 
 func (w *Wallet) TimelockedAddress(lockUntil time.Time) (Address, error) {
 	return w.keychain.TimelockedAddress(lockUntil)
+}
+
+func (w *Wallet) PublicAddress() (Address, error) {
+	return w.keychain.PublicAddress()
 }
 
 func (w *Wallet) Addresses() ([]Address, error) {
