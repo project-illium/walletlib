@@ -165,7 +165,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 						}
 						pubX, pubY := pubkey.ToXY()
 						lockingParams := makePublicAddressLockingParams(pubX, pubY)
-						unlockingParams := fmt.Sprintf("(cons %s (cons %s", lockingParams, multisigParams) + "))"
+						unlockingParams := fmt.Sprintf("(cons %s %s ", lockingParams, multisigParams) + ")"
 						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
 					} else {
 						rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
@@ -329,7 +329,7 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 						}
 						pubX, pubY := pubkey.ToXY()
 						lockingParams := makePublicAddressLockingParams(pubX, pubY)
-						unlockingParams := fmt.Sprintf("(cons %s (cons %s", lockingParams, multisigParams) + "))"
+						unlockingParams := fmt.Sprintf("(cons %s %s ", lockingParams, multisigParams) + ")"
 						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
 					} else {
 						rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
@@ -793,6 +793,19 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 			if err != nil {
 				return nil, nil, nil, nil, err
 			}
+			privateInput.UnlockingParams = unlockingParams
+		} else if bytes.Equal(note.LockingScript.ScriptCommitment, zk.PublicAddressScriptCommitment()) {
+			multisigParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			pubkey, ok := privkey.GetPublic().(*icrypto.NovaPublicKey)
+			if !ok {
+				return nil, nil, nil, nil, errors.New("signing error: private key is not type nova")
+			}
+			pubX, pubY := pubkey.ToXY()
+			lockingParams := makePublicAddressLockingParams(pubX, pubY)
+			unlockingParams := fmt.Sprintf("(cons %s %s ", lockingParams, multisigParams) + ")"
 			privateInput.UnlockingParams = unlockingParams
 		} else {
 			privateInput.UnlockingParams = signatureScript(txSig)
