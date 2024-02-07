@@ -161,6 +161,15 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		log = logger.DefaultLogger.WithLevel(pterm.LogLevelInfo)
 	}
 
+	scanner := NewTransactionScanner(viewKeys...)
+
+	publicAddr, vieKey, err := keychain.publicAddress()
+	if err != nil {
+		return nil, err
+	}
+	publicAddrLockingParams := publicAddr.ScriptHash()
+	scanner.AddScriptHash(types.NewID(publicAddrLockingParams[:]), vieKey)
+
 	return &Wallet{
 		ds:             ds,
 		prover:         cfg.prover,
@@ -175,7 +184,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainHeight:    height,
 		txSubs:         make(map[uint64]*TransactionSubscription),
 		syncSubs:       make(map[uint64]*SyncSubscription),
-		scanner:        NewTransactionScanner(viewKeys...),
+		scanner:        scanner,
 		newWallet:      newWallet,
 		birthday:       cfg.birthday,
 		done:           make(chan struct{}),
@@ -300,6 +309,14 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 	}
 
 	scanner := NewTransactionScanner(viewKeys...)
+	publicAddr, vieKey, err := w.keychain.publicAddress()
+	if err != nil {
+		log.WithCaller(true).Error("Error loading public addrs during rescan", log.Args("error", err))
+	} else {
+		publicAddrLockingParams := publicAddr.ScriptHash()
+		scanner.AddScriptHash(types.NewID(publicAddrLockingParams[:]), vieKey)
+	}
+
 	accdb := blockchain.NewAccumulatorDB(mock.NewMapDatastore())
 
 	var (
@@ -512,7 +529,35 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				}
 
 				locktime := int64(0)
-				if len(note.State) > 0 && len(note.State[0]) >= 8 {
+				if bytes.Equal(note.ScriptHash.Bytes(), publicAddrScriptHash) {
+					lockingParams := makePublicAddressLockingParams(addrInfo.LockingScript.LockingParams[0], addrInfo.LockingScript.LockingParams[1])
+					addr, err := NewPublicAddress(lockingParams, w.params)
+					if err != nil {
+						accumulator.DropProof(out.Commitment)
+						errStr := fmt.Sprintf("error creating timelocked address: %s", err)
+						log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+							"block":  blk.ID().String(),
+							"height": blk.Header.Height,
+							"error":  errStr,
+						}))
+						continue
+					}
+					sh := addr.ScriptHash()
+					if len(note.State) < 1 || !bytes.Equal(note.State[0], sh[:]) {
+						accumulator.DropProof(out.Commitment)
+						errStr := "output state doesn't match public address"
+						log.WithCaller(true).Error("Error connecting block to wallet", log.ArgsFromMap(map[string]any{
+							"block":  blk.ID().String(),
+							"height": blk.Header.Height,
+							"error":  errStr,
+						}))
+						continue
+					}
+					addrInfo.Addr = addr.String()
+					addrInfo.ScriptHash = publicAddrScriptHash
+					addrInfo.LockingScript.ScriptCommitment = zk.PublicAddressScriptCommitment()
+					addrInfo.LockingScript.LockingParams = nil
+				} else if len(note.State) > 0 && len(note.State[0]) >= 8 {
 					script := types.LockingScript{
 						ScriptCommitment: types.NewID(zk.TimelockedMultisigScriptCommitment()),
 						LockingParams: [][]byte{
@@ -885,6 +930,16 @@ func (w *Wallet) TimelockedAddress(lockUntil time.Time) (Address, error) {
 	return w.keychain.TimelockedAddress(lockUntil)
 }
 
+func (w *Wallet) PublicAddress() (Address, error) {
+	addr, key, err := w.keychain.publicAddress()
+	if err != nil {
+		return nil, err
+	}
+	sh := addr.ScriptHash()
+	w.scanner.AddScriptHash(types.NewID(sh[:]), key)
+	return addr, nil
+}
+
 func (w *Wallet) Addresses() ([]Address, error) {
 	return w.keychain.Addresses()
 }
@@ -1067,6 +1122,10 @@ func (w *Wallet) Stake(commitments []types.ID) error {
 func (w *Wallet) ImportAddress(addr Address, lockingScript types.LockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
 	if !w.chainClient.IsFullClient() {
 		return errors.New("lite client mode does not support address importing")
+	}
+
+	if _, ok := addr.(*BasicAddress); !ok {
+		return errors.New("public or exchange address importing is not currently supported")
 	}
 
 	scriptHash, err := lockingScript.Hash()

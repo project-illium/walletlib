@@ -34,6 +34,11 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 		feePerKB = w.feePerKB
 	}
 
+	isExchangeAddr := false
+	if _, ok := toAddr.(*ExchangeAddress); ok {
+		isExchangeAddr = true
+	}
+
 	rawTx, publicParams, deleteFunc, err := func() (*RawTransaction, zk.Parameters, func(), error) {
 		defer w.mtx.RUnlock()
 		defer w.spendMtx.Unlock()
@@ -59,6 +64,11 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 					}
 
 					if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
+						continue
+					}
+
+					// Exchange address can only select public utxos
+					if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
 						continue
 					}
 
@@ -102,6 +112,11 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 				}
 
 				if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
+					continue
+				}
+
+				// Exchange address can only select public utxos
+				if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
 					continue
 				}
 
@@ -153,6 +168,19 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 						if err != nil {
 							return nil, nil, nil, err
 						}
+						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
+					} else if bytes.Equal(n.LockingScript.ScriptCommitment, zk.PublicAddressScriptCommitment()) {
+						multisigParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
+						if err != nil {
+							return nil, nil, nil, err
+						}
+						pubkey, ok := privkey.GetPublic().(*icrypto.NovaPublicKey)
+						if !ok {
+							return nil, nil, nil, errors.New("signing error: private key is not type nova")
+						}
+						pubX, pubY := pubkey.ToXY()
+						lockingParams := makePublicAddressLockingParams(pubX, pubY)
+						unlockingParams := fmt.Sprintf("(cons %s %s ", lockingParams, multisigParams) + ")"
 						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
 					} else {
 						rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
@@ -213,6 +241,11 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 		feePerKB = w.feePerKB
 	}
 
+	isExchangeAddr := false
+	if _, ok := toAddr.(*ExchangeAddress); ok {
+		isExchangeAddr = true
+	}
+
 	rawTx, publicParams, deleteFunc, err := func() (*RawTransaction, zk.Parameters, func(), error) {
 		defer w.mtx.RUnlock()
 		defer w.spendMtx.Unlock()
@@ -231,6 +264,11 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 				}
 
 				if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
+					continue
+				}
+
+				// Exchange address can only select public utxos
+				if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
 					continue
 				}
 
@@ -257,6 +295,12 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 				if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
 					continue
 				}
+
+				// Exchange address can only select public utxos
+				if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
+					continue
+				}
+
 				notes = append(notes, &note)
 			}
 		}
@@ -304,6 +348,19 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 						if err != nil {
 							return nil, nil, nil, err
 						}
+						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
+					} else if bytes.Equal(n.LockingScript.ScriptCommitment, zk.PublicAddressScriptCommitment()) {
+						multisigParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
+						if err != nil {
+							return nil, nil, nil, err
+						}
+						pubkey, ok := privkey.GetPublic().(*icrypto.NovaPublicKey)
+						if !ok {
+							return nil, nil, nil, errors.New("signing error: private key is not type nova")
+						}
+						pubX, pubY := pubkey.ToXY()
+						lockingParams := makePublicAddressLockingParams(pubX, pubY)
+						unlockingParams := fmt.Sprintf("(cons %s %s ", lockingParams, multisigParams) + ")"
 						rawTx.PrivateInputs[i].UnlockingParams = unlockingParams
 					} else {
 						rawTx.PrivateInputs[i].UnlockingParams = signatureScript(sig)
@@ -365,6 +422,14 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 		feePerKB = w.feePerKB
 	}
 
+	isExchangeAddr := false
+	for _, output := range outputs {
+		if _, ok := output.Addr.(*ExchangeAddress); ok {
+			isExchangeAddr = true
+			break
+		}
+	}
+
 	var inputSource InputSource
 	if len(inputs) == 0 {
 		inputSource = func(amount types.Amount) (types.Amount, []*pb.SpendNote, error) {
@@ -398,6 +463,11 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 					continue
 				}
 
+				// Exchange address can only select public utxos
+				if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
+					continue
+				}
+
 				notes = append(notes, &note)
 				total += types.Amount(note.Amount)
 				if total > amount {
@@ -420,6 +490,11 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 					var note pb.SpendNote
 					if err := proto.Unmarshal(result, &note); err != nil {
 						return 0, nil, err
+					}
+
+					// Exchange address can only select public utxos
+					if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
+						continue
 					}
 
 					notes = append(notes, &note)
@@ -474,6 +549,11 @@ func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, 
 							LockingParams:    ls.LockingParams,
 						},
 						AccIndex: in.PrivateInput.CommitmentIndex,
+					}
+
+					// Exchange address can only select public utxos
+					if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
+						continue
 					}
 
 					notes = append(notes, note)
@@ -767,6 +847,19 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 			if err != nil {
 				return nil, nil, nil, nil, err
 			}
+			privateInput.UnlockingParams = unlockingParams
+		} else if bytes.Equal(note.LockingScript.ScriptCommitment, zk.PublicAddressScriptCommitment()) {
+			multisigParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			pubkey, ok := privkey.GetPublic().(*icrypto.NovaPublicKey)
+			if !ok {
+				return nil, nil, nil, nil, errors.New("signing error: private key is not type nova")
+			}
+			pubX, pubY := pubkey.ToXY()
+			lockingParams := makePublicAddressLockingParams(pubX, pubY)
+			unlockingParams := fmt.Sprintf("(cons %s %s ", lockingParams, multisigParams) + ")"
 			privateInput.UnlockingParams = unlockingParams
 		} else {
 			privateInput.UnlockingParams = signatureScript(txSig)

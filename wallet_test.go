@@ -6,6 +6,7 @@ package walletlib
 
 import (
 	"crypto/rand"
+	"errors"
 	lcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/project-illium/ilxd/blockchain"
 	"github.com/project-illium/ilxd/crypto"
@@ -25,29 +26,44 @@ import (
 func mockAddress() (Address, types.LockingScript, lcrypto.PrivKey, error) {
 	viewPriv, viewPub, err := crypto.GenerateCurve25519Key(rand.Reader)
 	if err != nil {
-		return nil, types.LockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, err
 	}
 	_, spendKey, err := crypto.GenerateNovaKey(rand.Reader)
 	if err != nil {
-		return nil, types.LockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, err
 	}
 	pubX, pubY := spendKey.(*crypto.NovaPublicKey).ToXY()
 
-	basicTransferCommitment, err := zk.LurkCommit(zk.BasicTransferScript())
 	if err != nil {
 		return nil, types.LockingScript{}, nil, err
 	}
 
 	lockingScript := types.LockingScript{
-		ScriptCommitment: types.NewID(basicTransferCommitment),
+		ScriptCommitment: types.NewID(zk.BasicTransferScriptCommitment()),
 		LockingParams:    [][]byte{pubX, pubY},
 	}
 
 	addr, err := NewBasicAddress(lockingScript, viewPub, &params.RegestParams)
 	if err != nil {
-		return nil, types.LockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, err
 	}
 	return addr, lockingScript, viewPriv, nil
+}
+
+func mockPublicAddress() (Address, error) {
+	_, spendKey, err := crypto.GenerateNovaKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	pubX, pubY := spendKey.(*crypto.NovaPublicKey).ToXY()
+
+	lockingParams := makePublicAddressLockingParams(pubX, pubY)
+
+	addr, err := NewPublicAddress(lockingParams, &params.RegestParams)
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
 }
 
 func TestWallet(t *testing.T) {
@@ -453,4 +469,103 @@ func TestCoinbaseAndSpends(t *testing.T) {
 		}
 	}
 	assert.True(t, timeLocked)
+}
+
+func TestPublicAddresses(t *testing.T) {
+	ds := mock.NewMapDatastore()
+
+	broadcast := make(chan *transactions.Transaction)
+
+	w, err := NewWallet([]Option{
+		Datastore(ds),
+		DataDir(repo.DefaultHomeDir),
+		BlockchainSource(&client.InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error {
+				go func() {
+					broadcast <- tx
+				}()
+				return nil
+			},
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, uint32, error) { return nil, 0, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
+		}),
+		Params(&params.RegestParams),
+		Prover(&zk.MockProver{}),
+	}...)
+	assert.NoError(t, err)
+
+	addr, err := w.PublicAddress()
+	assert.NoError(t, err)
+
+	toAmount := types.Amount(1000000)
+	output, _, err := buildOutput(addr, toAmount, types.State{})
+	assert.NoError(t, err)
+
+	// Receive to public address
+	blk1 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 1},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk1)
+
+	notes, err := w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 1)
+	assert.Equal(t, notes[0].Address, addr.String())
+
+	addr2, err := mockPublicAddress()
+	assert.NoError(t, err)
+
+	// Spend the received coins to a public address
+	amt := types.Amount(50000)
+	_, err = w.Spend(addr2, amt, 10)
+	assert.NoError(t, err)
+
+	tx := <-broadcast
+
+	blk2 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 2},
+		Transactions: []*transactions.Transaction{
+			tx,
+		},
+	}
+	w.ConnectBlock(blk2)
+
+	notes, err = w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 1)
+	assert.NotEqual(t, notes[0].Address, addr.String())
+
+	// Spend the received coins to an exchange address
+	exAddr := &ExchangeAddress{
+		params:  addr.(*PublicAddress).params,
+		version: 3,
+		hash:    addr.(*PublicAddress).hash,
+	}
+	amt = types.Amount(50000)
+	_, err = w.Spend(exAddr, amt, 10)
+	// This should trigger insufficient funds because the
+	// change in the previous transaction were sent to a
+	// private address.
+	assert.True(t, errors.Is(err, ErrInsufficientFunds))
+
+	// Get some more public coins and try again
+	blk3 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 1},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk3)
+
+	_, err = w.Spend(exAddr, amt, 10)
+	assert.NoError(t, err)
 }

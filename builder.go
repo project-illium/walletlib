@@ -230,17 +230,53 @@ func buildInput(note *pb.SpendNote, proof *blockchain.InclusionProof) (types.Nul
 }
 
 func buildOutput(addr Address, amt types.Amount, state types.State) (*transactions.Output, circparams.PrivateOutput, error) {
-	addrScriptHash := addr.ScriptHash()
+	var (
+		outputNote       types.SpendNote
+		outputCiphertext []byte
+	)
 	salt, err := types.RandomSalt()
 	if err != nil {
 		return nil, circparams.PrivateOutput{}, err
 	}
-	outputNote := types.SpendNote{
-		ScriptHash: addrScriptHash,
-		Amount:     amt,
-		AssetID:    types.IlliumCoinID,
-		State:      state,
-		Salt:       salt,
+
+	switch addr.(type) {
+	case *BasicAddress:
+		addrScriptHash := addr.ScriptHash()
+		outputNote = types.SpendNote{
+			ScriptHash: addrScriptHash,
+			Amount:     amt,
+			AssetID:    types.IlliumCoinID,
+			State:      state,
+			Salt:       salt,
+		}
+		serializedOutputNote, err := outputNote.Serialize()
+		if err != nil {
+			return nil, circparams.PrivateOutput{}, err
+		}
+		toViewKey, ok := addr.ViewKey().(*crypto.Curve25519PublicKey)
+		if !ok {
+			return nil, circparams.PrivateOutput{}, errors.New("address view key is not curve25519")
+		}
+		outputCiphertext, err = toViewKey.Encrypt(serializedOutputNote)
+		if err != nil {
+			return nil, circparams.PrivateOutput{}, err
+		}
+
+	case *PublicAddress, *ExchangeAddress:
+		lockingParamsHash := addr.ScriptHash()
+		outputNote = types.SpendNote{
+			ScriptHash: types.NewID(publicAddrScriptHash),
+			Amount:     amt,
+			AssetID:    types.IlliumCoinID,
+			State:      types.State{lockingParamsHash[:]},
+			Salt:       salt,
+		}
+		outputCiphertext, err = outputNote.ToPublicCiphertext()
+		if err != nil {
+			return nil, circparams.PrivateOutput{}, err
+		}
+	default:
+		return nil, circparams.PrivateOutput{}, errors.New("unknown address type")
 	}
 
 	outputCommitment, err := outputNote.Commitment()
@@ -248,27 +284,14 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 		return nil, circparams.PrivateOutput{}, err
 	}
 
-	serializedOutputNote, err := outputNote.Serialize()
-	if err != nil {
-		return nil, circparams.PrivateOutput{}, err
-	}
-	toViewKey, ok := addr.ViewKey().(*crypto.Curve25519PublicKey)
-	if !ok {
-		return nil, circparams.PrivateOutput{}, errors.New("address view key is not curve25519")
-	}
-	outputCipherText, err := toViewKey.Encrypt(serializedOutputNote)
-	if err != nil {
-		return nil, circparams.PrivateOutput{}, err
-	}
-
 	txOut := &transactions.Output{
 		Commitment: outputCommitment[:],
-		Ciphertext: outputCipherText,
+		Ciphertext: outputCiphertext,
 	}
 
 	privOut := circparams.PrivateOutput{
-		ScriptHash: addrScriptHash,
-		Amount:     amt,
+		ScriptHash: outputNote.ScriptHash,
+		Amount:     outputNote.Amount,
 		Salt:       outputNote.Salt,
 		AssetID:    outputNote.AssetID,
 		State:      outputNote.State,
@@ -297,6 +320,8 @@ func selectScript(scriptCommitment []byte) string {
 		return zk.MultisigScript()
 	} else if bytes.Equal(scriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
 		return zk.TimelockedMultisigScript()
+	} else if bytes.Equal(scriptCommitment, zk.PublicAddressScriptCommitment()) {
+		return zk.PublicAddressScript()
 	}
 	return ""
 }
