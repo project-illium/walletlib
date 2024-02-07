@@ -931,7 +931,13 @@ func (w *Wallet) TimelockedAddress(lockUntil time.Time) (Address, error) {
 }
 
 func (w *Wallet) PublicAddress() (Address, error) {
-	return w.keychain.PublicAddress()
+	addr, key, err := w.keychain.publicAddress()
+	if err != nil {
+		return nil, err
+	}
+	sh := addr.ScriptHash()
+	w.scanner.AddScriptHash(types.NewID(sh[:]), key)
+	return addr, nil
 }
 
 func (w *Wallet) Addresses() ([]Address, error) {
