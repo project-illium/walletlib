@@ -244,27 +244,42 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 }
 
 func (kc *Keychain) PublicAddress() (Address, error) {
+	addr, _, err := kc.publicAddress()
+	return addr, err
+}
+
+func (kc *Keychain) publicAddress() (Address, *icrypto.Curve25519PrivateKey, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
 	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var currentAddrInfo pb.AddrInfo
 	if err := proto.Unmarshal(ser, &currentAddrInfo); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	lockingParams := makePublicAddressLockingParams(currentAddrInfo.LockingScript.LockingParams[0], currentAddrInfo.LockingScript.LockingParams[1])
 
-	return NewPublicAddress(lockingParams, kc.params)
+	viewPriv, err := crypto.UnmarshalPrivateKey(currentAddrInfo.ViewPrivKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	curvePriv, ok := viewPriv.(*icrypto.Curve25519PrivateKey)
+	if !ok {
+		return nil, nil, errors.New("curve25519 key from db type assertion failed")
+	}
+
+	addr, err := NewPublicAddress(lockingParams, kc.params)
+	return addr, curvePriv, err
 }
 
 func (kc *Keychain) NewAddress() (Address, error) {

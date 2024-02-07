@@ -161,6 +161,15 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		log = logger.DefaultLogger.WithLevel(pterm.LogLevelInfo)
 	}
 
+	scanner := NewTransactionScanner(viewKeys...)
+
+	publicAddr, vieKey, err := keychain.publicAddress()
+	if err != nil {
+		return nil, err
+	}
+	publicAddrLockingParams := publicAddr.ScriptHash()
+	scanner.AddScriptHash(types.NewID(publicAddrLockingParams[:]), vieKey)
+
 	return &Wallet{
 		ds:             ds,
 		prover:         cfg.prover,
@@ -175,7 +184,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		chainHeight:    height,
 		txSubs:         make(map[uint64]*TransactionSubscription),
 		syncSubs:       make(map[uint64]*SyncSubscription),
-		scanner:        NewTransactionScanner(viewKeys...),
+		scanner:        scanner,
 		newWallet:      newWallet,
 		birthday:       cfg.birthday,
 		done:           make(chan struct{}),
@@ -300,6 +309,14 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 	}
 
 	scanner := NewTransactionScanner(viewKeys...)
+	publicAddr, vieKey, err := w.keychain.publicAddress()
+	if err != nil {
+		log.WithCaller(true).Error("Error loading public addrs during rescan", log.Args("error", err))
+	} else {
+		publicAddrLockingParams := publicAddr.ScriptHash()
+		scanner.AddScriptHash(types.NewID(publicAddrLockingParams[:]), vieKey)
+	}
+
 	accdb := blockchain.NewAccumulatorDB(mock.NewMapDatastore())
 
 	var (
@@ -1099,6 +1116,10 @@ func (w *Wallet) Stake(commitments []types.ID) error {
 func (w *Wallet) ImportAddress(addr Address, lockingScript types.LockingScript, viewPrivkey lcrypto.PrivKey, rescan bool, rescanHeight uint32) error {
 	if !w.chainClient.IsFullClient() {
 		return errors.New("lite client mode does not support address importing")
+	}
+
+	if _, ok := addr.(*BasicAddress); !ok {
+		return errors.New("public or exchange address importing is not currently supported")
 	}
 
 	scriptHash, err := lockingScript.Hash()

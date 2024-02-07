@@ -25,29 +25,44 @@ import (
 func mockAddress() (Address, types.LockingScript, lcrypto.PrivKey, error) {
 	viewPriv, viewPub, err := crypto.GenerateCurve25519Key(rand.Reader)
 	if err != nil {
-		return nil, types.LockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, err
 	}
 	_, spendKey, err := crypto.GenerateNovaKey(rand.Reader)
 	if err != nil {
-		return nil, types.LockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, err
 	}
 	pubX, pubY := spendKey.(*crypto.NovaPublicKey).ToXY()
 
-	basicTransferCommitment, err := zk.LurkCommit(zk.BasicTransferScript())
 	if err != nil {
 		return nil, types.LockingScript{}, nil, err
 	}
 
 	lockingScript := types.LockingScript{
-		ScriptCommitment: types.NewID(basicTransferCommitment),
+		ScriptCommitment: types.NewID(zk.BasicTransferScriptCommitment()),
 		LockingParams:    [][]byte{pubX, pubY},
 	}
 
 	addr, err := NewBasicAddress(lockingScript, viewPub, &params.RegestParams)
 	if err != nil {
-		return nil, types.LockingScript{}, nil, nil
+		return nil, types.LockingScript{}, nil, err
 	}
 	return addr, lockingScript, viewPriv, nil
+}
+
+func mockPublicAddress() (Address, error) {
+	_, spendKey, err := crypto.GenerateNovaKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	pubX, pubY := spendKey.(*crypto.NovaPublicKey).ToXY()
+
+	lockingParams := makePublicAddressLockingParams(pubX, pubY)
+
+	addr, err := NewPublicAddress(lockingParams, &params.RegestParams)
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
 }
 
 func TestWallet(t *testing.T) {
@@ -453,4 +468,54 @@ func TestCoinbaseAndSpends(t *testing.T) {
 		}
 	}
 	assert.True(t, timeLocked)
+}
+
+func TestPublicAddresses(t *testing.T) {
+	ds := mock.NewMapDatastore()
+
+	w, err := NewWallet([]Option{
+		Datastore(ds),
+		DataDir(repo.DefaultHomeDir),
+		BlockchainSource(&client.InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error { return nil },
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, uint32, error) { return nil, 0, nil },
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
+		}),
+		Params(&params.RegestParams),
+		Prover(&zk.MockProver{}),
+	}...)
+	assert.NoError(t, err)
+
+	addr, err := w.PublicAddress()
+	assert.NoError(t, err)
+
+	toAmount := types.Amount(1000000)
+	output, _, err := buildOutput(addr, toAmount, types.State{})
+	assert.NoError(t, err)
+
+	// Receive to public address
+	blk1 := &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 1},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk1)
+
+	notes, err := w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 1)
+	assert.Equal(t, notes[0].Address, addr.String())
+
+	addr, err = mockPublicAddress()
+	assert.NoError(t, err)
+
+	// Spend the received coins to a public address
+	amt := types.Amount(500000)
+	_, err = w.Spend(addr, amt, 10)
+	assert.NoError(t, err)
 }

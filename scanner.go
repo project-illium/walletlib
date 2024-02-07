@@ -48,6 +48,20 @@ func NewTransactionScanner(keys ...*crypto.Curve25519PrivateKey) *TransactionSca
 	}
 }
 
+// NewTransactionScannerWithPublicAddrs returns a new TransactionScanner initialized
+// with both view keys and public address scriptHashes.
+func NewTransactionScannerWithPublicAddrs(keyMap map[types.ID]*crypto.Curve25519PrivateKey) *TransactionScanner {
+	keys := make([]*crypto.Curve25519PrivateKey, 0, len(keyMap))
+	for _, key := range keyMap {
+		keys = append(keys, key)
+	}
+	return &TransactionScanner{
+		keys:        keys,
+		publicAddrs: keyMap,
+		mtx:         sync.RWMutex{},
+	}
+}
+
 // AddKeys adds new scan keys to the TransactionScanner
 func (s *TransactionScanner) AddKeys(keys ...*crypto.Curve25519PrivateKey) {
 	s.mtx.Lock()
@@ -62,6 +76,14 @@ keyLoop:
 		}
 		s.keys = append(s.keys, k)
 	}
+}
+
+// AddScriptHash adds new public address script hashes to the scanner.
+func (s *TransactionScanner) AddScriptHash(scriptHash types.ID, key *crypto.Curve25519PrivateKey) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	s.publicAddrs[scriptHash] = key
 }
 
 // RemoveKey removes scan keys from the TransactionScanner
@@ -118,7 +140,7 @@ func (s *TransactionScanner) ScanOutputs(blk *blocks.Block) map[types.ID]*ScanMa
 		close(workChan)
 	}()
 
-	for i := 0; i < outputs*len(s.keys); i++ {
+	for i := 0; i < outputs; i++ {
 		match := <-resultChan
 		if match != nil {
 			ret[match.Commitment] = match
@@ -134,9 +156,9 @@ workloop:
 		case w := <-workChan:
 			if w != nil {
 				output := w.tx.Outputs()[w.index]
-				if len(output.Ciphertext) >= 136 && bytes.Equal(output.Ciphertext[0:32], publicAddrScriptHash) {
+				if len(output.Ciphertext) >= 160 && bytes.Equal(output.Ciphertext[0:32], publicAddrScriptHash) {
 					for sh, k := range s.publicAddrs {
-						if bytes.Equal(output.Ciphertext[104:135], sh.Bytes()) {
+						if bytes.Equal(output.Ciphertext[128:160], sh.Bytes()) {
 							resultChan <- &ScanMatch{
 								Key:           k,
 								Commitment:    types.NewID(output.Commitment),

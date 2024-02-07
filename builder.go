@@ -271,7 +271,7 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 			State:      types.State{lockingParamsHash[:]},
 			Salt:       salt,
 		}
-		outputCiphertext, err = outputNote.Serialize()
+		outputCiphertext, err = outputNote.ToPublicCiphertext()
 		if err != nil {
 			return nil, circparams.PrivateOutput{}, err
 		}
@@ -320,6 +320,8 @@ func selectScript(scriptCommitment []byte) string {
 		return zk.MultisigScript()
 	} else if bytes.Equal(scriptCommitment, zk.TimelockedMultisigScriptCommitment()) {
 		return zk.TimelockedMultisigScript()
+	} else if bytes.Equal(scriptCommitment, zk.PublicAddressScriptCommitment()) {
+		return zk.PublicAddressScript()
 	}
 	return ""
 }

@@ -592,6 +592,10 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/polydawn/refmt v0.89.0 h1:ADJTApkvkeBZsN0tBTx8QjpD9JkmxbKp0cxfr9qszm4=
 github.com/polydawn/refmt v0.89.0/go.mod h1:/zvteZs/GwLtCgZ4BL6CBsk9IKIlexP43ObX9AxTqTw=
 github.com/posener/complete v1.1.1/go.mod h1:em0nMJCgc9GFtwrmVmEMR/ZL6WyhyjMBndrE9hABlRI=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240207013157-1c754aa98c3f h1:ZMv2o2u0lPzBS29P96Zxpx/U+9w075C97sKALeZxhpQ=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240207013157-1c754aa98c3f/go.mod h1:v1QFBtNbpKJSnv1PXf8VL7zbxmKqpHCKSBHxmGnhY1s=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240207182546-58b0a344ee5f h1:yMz13plmokEKZqhsNB9d1CN8LbHaj4AE2fasR1ZWZzk=
+github.com/project-illium/ilxd v0.0.6-alpha.0.20240207182546-58b0a344ee5f/go.mod h1:v1QFBtNbpKJSnv1PXf8VL7zbxmKqpHCKSBHxmGnhY1s=
 github.com/project-illium/ilxd v0.0.7-alpha.0.20240126170548-374683a75f93 h1:bzTua3LFtbC6eAjPMiV0P3ir8xgsWD9BaIuSokshHp4=
 github.com/project-illium/ilxd v0.0.7-alpha.0.20240126170548-374683a75f93/go.mod h1:/v7nbCBxxTVBFPIoyO2paUpHn8SQLweSmVUh4DNrLgs=
 github.com/project-illium/ilxd v0.0.7-alpha.0.20240203160422-c694563ffc0f h1:rOOsHTQZehbsoUJaqj2oienmuxHm747R/5v7Q3VdQ9s=
