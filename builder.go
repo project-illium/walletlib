@@ -262,7 +262,7 @@ func buildOutput(addr Address, amt types.Amount, state types.State) (*transactio
 			return nil, circparams.PrivateOutput{}, err
 		}
 
-	case *PublicAddress:
+	case *PublicAddress, *ExchangeAddress:
 		lockingParamsHash := addr.ScriptHash()
 		outputNote = types.SpendNote{
 			ScriptHash: types.NewID(publicAddrScriptHash),
