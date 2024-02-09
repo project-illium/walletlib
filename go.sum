@@ -600,6 +600,8 @@ github.com/project-illium/ilxd v0.0.7-alpha.0.20240126170548-374683a75f93 h1:bzT
 github.com/project-illium/ilxd v0.0.7-alpha.0.20240126170548-374683a75f93/go.mod h1:/v7nbCBxxTVBFPIoyO2paUpHn8SQLweSmVUh4DNrLgs=
 github.com/project-illium/ilxd v0.0.7-alpha.0.20240203160422-c694563ffc0f h1:rOOsHTQZehbsoUJaqj2oienmuxHm747R/5v7Q3VdQ9s=
 github.com/project-illium/ilxd v0.0.7-alpha.0.20240203160422-c694563ffc0f/go.mod h1:v1QFBtNbpKJSnv1PXf8VL7zbxmKqpHCKSBHxmGnhY1s=
+github.com/project-illium/ilxd v0.0.7-alpha.0.20240209161301-f01d72aae3e3 h1:ADKmIgo0TFyG+PqOrTAkpyQJzOclayVZyGGePaX1Qsc=
+github.com/project-illium/ilxd v0.0.7-alpha.0.20240209161301-f01d72aae3e3/go.mod h1:G3p93C52k+VzTFjY/3izLEawtMJxONCnaULFPKVcRLM=
 github.com/project-illium/logger v0.0.0-20240118200101-2fb0847599c9 h1:tjuJ2PyUFqqaf7n40VWgDTHz6kq4NDGdc2XEW2RZBao=
 github.com/project-illium/logger v0.0.0-20240118200101-2fb0847599c9/go.mod h1:GL6B2FAMr7v1FEC+rCSkf5JBKKFpGf8Hjz3uZsJ60pQ=
 github.com/project-illium/weightedrand/v2 v2.1.0 h1:8zVDjthKwP0yfHt3uC3fTEqH0KJ5AwCL02YYx+cpdb8=

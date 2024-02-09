@@ -128,22 +128,25 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		fpkb = cfg.feePerKB
 	}
 
+	adb := blockchain.NewAccumulatorDB(ds)
+
 	var (
 		height    uint32
 		newWallet bool
 	)
-	heightBytes, err := ds.Get(context.Background(), datastore.NewKey(WalletHeightDatastoreKey))
+	_, err = ds.Get(context.Background(), datastore.NewKey(WalletHeightDatastoreKey))
 	if err != nil && !errors.Is(err, datastore.ErrNotFound) {
 		return nil, err
 	} else if errors.Is(err, datastore.ErrNotFound) {
 		newWallet = true
-	} else if err == nil {
-		height = binary.BigEndian.Uint32(heightBytes)
 	}
 
-	adb := blockchain.NewAccumulatorDB(ds)
 	if !newWallet {
 		if err := adb.Init(nil); err != nil {
+			return nil, err
+		}
+		height, err = adb.LastFlushHeight()
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -232,10 +235,12 @@ func (w *Wallet) Start() {
 			}
 			w.syncSubMtx.RLock()
 			for _, sub := range w.syncSubs {
-				sub.C <- &SyncNotification{
-					CurrentBlock: blk.Header.Height,
-					BestBlock:    bestHeight,
-				}
+				go func(s *SyncSubscription) {
+					s.C <- &SyncNotification{
+						CurrentBlock: blk.Header.Height,
+						BestBlock:    bestHeight,
+					}
+				}(sub)
 			}
 			w.syncSubMtx.RUnlock()
 		}
