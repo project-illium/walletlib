@@ -235,12 +235,12 @@ func (w *Wallet) Start() {
 			}
 			w.syncSubMtx.RLock()
 			for _, sub := range w.syncSubs {
-				go func() {
-					sub.C <- &SyncNotification{
+				go func(s *SyncSubscription) {
+					s.C <- &SyncNotification{
 						CurrentBlock: blk.Header.Height,
 						BestBlock:    bestHeight,
 					}
-				}()
+				}(sub)
 			}
 			w.syncSubMtx.RUnlock()
 		}
