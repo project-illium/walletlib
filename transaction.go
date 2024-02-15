@@ -849,7 +849,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 			}
 			privateInput.UnlockingParams = unlockingParams
 		} else if bytes.Equal(note.LockingScript.ScriptCommitment, zk.PublicAddressScriptCommitment()) {
-			multisigParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{sig}, sigHash)
+			multisigParams, err := zk.MakeMultisigUnlockingParams([]crypto.PubKey{privkey.GetPublic()}, [][]byte{txSig}, sigHash)
 			if err != nil {
 				return nil, nil, nil, nil, err
 			}
@@ -893,7 +893,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	if err != nil {
 		return nil, err
 	}
-
+	
 	proof, err := w.prover.Prove(zk.StakeValidationProgram(), privateParams, publicParams)
 	if err != nil {
 		deleteFunc()
