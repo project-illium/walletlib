@@ -123,9 +123,6 @@ func BuildTransaction(outputs []*RawOutput, fetchInputs InputSource, fetchChange
 
 	raw.Tx = transactions.WrapTransaction(standardTx)
 
-	// Randomize input and output order
-	shuffleTransaction(raw)
-
 	return raw, nil
 }
 
