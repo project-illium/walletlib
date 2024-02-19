@@ -267,6 +267,10 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 					continue
 				}
 
+				if time.Unix(note.LockedUntil, 0).After(time.Now()) {
+					return nil, nil, nil, errors.New("input commitment is timelocked")
+				}
+
 				// Exchange address can only select public utxos
 				if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
 					continue
@@ -293,6 +297,9 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 					continue
 				}
 				if _, ok := w.inflightUtxos[types.NewID(note.Commitment)]; ok {
+					continue
+				}
+				if time.Unix(note.LockedUntil, 0).After(time.Now()) {
 					continue
 				}
 
@@ -893,7 +900,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	if err != nil {
 		return nil, err
 	}
-	
+
 	proof, err := w.prover.Prove(zk.StakeValidationProgram(), privateParams, publicParams)
 	if err != nil {
 		deleteFunc()
