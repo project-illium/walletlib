@@ -322,6 +322,8 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			}),
 		},
 	}
+
+	// 1 utxo in wallet
 	w.ConnectBlock(blk0)
 
 	output, _, err = buildOutput(addr, toAmount, types.State{})
@@ -336,6 +338,8 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			}),
 		},
 	}
+
+	// 2 utxos in wallet
 	w.ConnectBlock(blk1)
 
 	notes, err := w.Notes()
@@ -356,6 +360,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			}),
 		},
 	}
+	// 2 utxos in wallet (1 staked)
 	w.ConnectBlock(blk2)
 
 	// Spend
@@ -371,6 +376,8 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			tx,
 		},
 	}
+
+	// 2 utoxs in wallet (1 staked, 1 change)
 	w.ConnectBlock(blk3)
 
 	cbtx, err := w.BuildCoinbaseTransaction(types.Amount(2000000), nil, priv)
@@ -382,6 +389,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			cbtx,
 		},
 	}
+	// 3 utxos in wallet (1 staked)
 	w.ConnectBlock(blk4)
 
 	notes, err = w.Notes()
@@ -401,6 +409,8 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			tx,
 		},
 	}
+
+	// 3 utxos in wallet (1 staked)
 	w.ConnectBlock(blk5)
 
 	// Spend
@@ -416,6 +426,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			tx,
 		},
 	}
+	// 3 utxos in wallet (1 staked)
 	w.ConnectBlock(blk6)
 
 	// Sweep
@@ -431,9 +442,14 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			tx,
 		},
 	}
+	// 1 utxo in wallet (1 staked)
 	w.ConnectBlock(blk7)
 
 	// Receive
+	addr, err = w.Address()
+	assert.NoError(t, err)
+	output, _, err = buildOutput(addr, toAmount, types.State{})
+	assert.NoError(t, err)
 	blk8 := &blocks.Block{
 		Header: &blocks.BlockHeader{Height: 8},
 		Transactions: []*transactions.Transaction{
@@ -442,6 +458,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 			}),
 		},
 	}
+	// 2 utxos in wallet (1 staked)
 	w.ConnectBlock(blk8)
 
 	// Timelock
@@ -450,16 +467,17 @@ func TestCoinbaseAndSpends(t *testing.T) {
 
 	tx = <-broadcastChan
 	blk9 := &blocks.Block{
-		Header: &blocks.BlockHeader{Height: 7},
+		Header: &blocks.BlockHeader{Height: 9},
 		Transactions: []*transactions.Transaction{
 			tx,
 		},
 	}
+	// 3 utxos in wallet (1 staked, 1 timelocked, 1 change)
 	w.ConnectBlock(blk9)
 
 	notes, err = w.Notes()
 	assert.NoError(t, err)
-	assert.Len(t, notes, 2)
+	assert.Len(t, notes, 3)
 
 	timeLocked := false
 	for _, n := range notes {
