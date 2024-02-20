@@ -303,6 +303,10 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 					continue
 				}
 
+				if note.Staked {
+					continue
+				}
+
 				// Exchange address can only select public utxos
 				if isExchangeAddr && !bytes.Equal(note.ScriptHash, publicAddrScriptHash) {
 					continue
