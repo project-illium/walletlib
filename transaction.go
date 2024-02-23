@@ -26,7 +26,7 @@ import (
 
 var ErrInsufficientFunds = errors.New("insufficient funds")
 
-func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
+func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, func(), error) {
 	w.mtx.RLock()
 	w.spendMtx.Lock()
 
@@ -214,7 +214,7 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 		return rawTx, publicParams, deleteFunc, nil
 	}()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create the transaction zk proof
@@ -226,15 +226,15 @@ func (w *Wallet) buildAndProveTransaction(toAddr Address, toState types.State, a
 	proof, err := w.prover.Prove(zk.StandardValidationProgram(), privateParams, publicParams)
 	if err != nil {
 		deleteFunc()
-		return nil, err
+		return nil, nil, err
 	}
 
 	rawTx.Tx.GetStandardTransaction().Proof = proof
 
-	return rawTx.Tx, nil
+	return rawTx.Tx, deleteFunc, nil
 }
 
-func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, error) {
+func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount, inputCommitments ...types.ID) (*transactions.Transaction, func(), error) {
 	w.mtx.RLock()
 	w.spendMtx.Lock()
 	if feePerKB == 0 {
@@ -405,7 +405,7 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 		return rawTx, publicParams, deleteFunc, nil
 	}()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create the transaction zk proof
@@ -417,12 +417,12 @@ func (w *Wallet) sweepAndProveTransaction(toAddr Address, feePerKB types.Amount,
 	proof, err := w.prover.Prove(zk.StandardValidationProgram(), privateParams, publicParams)
 	if err != nil {
 		deleteFunc()
-		return nil, err
+		return nil, nil, err
 	}
 
 	rawTx.Tx.GetStandardTransaction().Proof = proof
 
-	return rawTx.Tx, nil
+	return rawTx.Tx, deleteFunc, nil
 }
 
 func (w *Wallet) CreateRawTransaction(inputs []*RawInput, outputs []*RawOutput, addChangeOutput bool, feePerKB types.Amount) (*RawTransaction, error) {
@@ -774,7 +774,7 @@ func (w *Wallet) CreateRawStakeTransaction(in *RawInput) (*RawTransaction, error
 	return rawTx, nil
 }
 
-func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactions.Transaction, error) {
+func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactions.Transaction, func(), error) {
 	w.mtx.RLock()
 	w.spendMtx.Lock()
 
@@ -902,16 +902,16 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 		return tx, privateParams, publicParams, deleteFunc, nil
 	}()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	proof, err := w.prover.Prove(zk.StakeValidationProgram(), privateParams, publicParams)
 	if err != nil {
 		deleteFunc()
-		return nil, err
+		return nil, nil, err
 	}
 	tx.Proof = proof
-	return transactions.WrapTransaction(tx), nil
+	return transactions.WrapTransaction(tx), deleteFunc, nil
 }
 
 func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Address, networkKey crypto.PrivKey) (*transactions.Transaction, error) {

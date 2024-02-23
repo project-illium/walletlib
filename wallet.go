@@ -575,22 +575,24 @@ func (w *Wallet) ChangeWalletPassphrase(currentPassphrase, newPassphrase string)
 }
 
 func (w *Wallet) Spend(toAddr Address, amount types.Amount, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
-	tx, err := w.buildAndProveTransaction(toAddr, types.State{}, amount, feePerKB, inputCommitments...)
+	tx, cleanup, err := w.buildAndProveTransaction(toAddr, types.State{}, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
 	if err := w.chainClient.Broadcast(tx); err != nil {
+		cleanup()
 		return types.ID{}, err
 	}
 	return tx.ID(), nil
 }
 
 func (w *Wallet) SweepWallet(toAddr Address, feePerKB types.Amount, inputCommitments ...types.ID) (types.ID, error) {
-	tx, err := w.sweepAndProveTransaction(toAddr, feePerKB, inputCommitments...)
+	tx, cleanup, err := w.sweepAndProveTransaction(toAddr, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
 	if err := w.chainClient.Broadcast(tx); err != nil {
+		cleanup()
 		return types.ID{}, err
 	}
 	return tx.ID(), nil
@@ -604,11 +606,12 @@ func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerK
 	locktime := make([]byte, 8)
 	binary.BigEndian.PutUint64(locktime, uint64(lockUntil.Unix()))
 
-	tx, err := w.buildAndProveTransaction(addr, types.State{locktime}, amount, feePerKB, inputCommitments...)
+	tx, cleanup, err := w.buildAndProveTransaction(addr, types.State{locktime}, amount, feePerKB, inputCommitments...)
 	if err != nil {
 		return types.ID{}, err
 	}
 	if err := w.chainClient.Broadcast(tx); err != nil {
+		cleanup()
 		return types.ID{}, err
 	}
 	return tx.ID(), nil
@@ -616,11 +619,12 @@ func (w *Wallet) TimelockCoins(amount types.Amount, lockUntil time.Time, feePerK
 
 func (w *Wallet) Stake(commitments []types.ID) error {
 	for _, commitment := range commitments {
-		tx, err := w.buildAndProveStakeTransaction(commitment)
+		tx, cleanup, err := w.buildAndProveStakeTransaction(commitment)
 		if err != nil {
 			return err
 		}
 		if err := w.chainClient.Broadcast(tx); err != nil {
+			cleanup()
 			return err
 		}
 	}
