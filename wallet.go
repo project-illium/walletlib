@@ -802,6 +802,9 @@ type WalletTransaction struct {
 
 	Inputs  []IO
 	Outputs []IO
+
+	BlockID     types.ID
+	BlockHeight uint32
 }
 
 type IO interface{}

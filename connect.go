@@ -168,11 +168,13 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 			for _, sub := range w.txSubs {
 				go func(s *TransactionSubscription) {
 					s.C <- &WalletTransaction{
-						Txid:      tx.ID(),
-						AmountIn:  walletIn,
-						AmountOut: walletOut,
-						Inputs:    ins,
-						Outputs:   outs,
+						Txid:        tx.ID(),
+						AmountIn:    walletIn,
+						AmountOut:   walletOut,
+						Inputs:      ins,
+						Outputs:     outs,
+						BlockID:     blk.ID(),
+						BlockHeight: blk.Header.Height,
 					}
 				}(sub)
 			}
