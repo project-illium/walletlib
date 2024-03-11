@@ -64,7 +64,7 @@ func (w *Wallet) connectBlock(blk *blocks.Block, scanner *TransactionScanner, ac
 				accumulator.Insert(out.Commitment, ok)
 			}
 			if ok {
-				txioOut, err := w.connectOutput(match, out.Commitment, accumulator.NumElements()-1)
+				txioOut, err := w.connectOutput(match, out.Commitment, accumulator.NumElements()-1, isRescan)
 				if err != nil {
 					log.WithCaller(true).Error("Error connecting output to wallet", log.ArgsFromMap(map[string]any{
 						"block":  blk.ID().String(),
@@ -214,7 +214,7 @@ func (w *Wallet) connectInput(n types.Nullifier, commitment types.ID) (*TxIO, er
 	return in, nil
 }
 
-func (w *Wallet) connectOutput(match *ScanMatch, outputCommitment []byte, commitmentIndex uint64) (*TxIO, error) {
+func (w *Wallet) connectOutput(match *ScanMatch, outputCommitment []byte, commitmentIndex uint64, isRescan bool) (*TxIO, error) {
 	addrInfo, err := w.keychain.addrInfo(match.Key)
 	if err != nil {
 		return nil, err
@@ -317,13 +317,16 @@ func (w *Wallet) connectOutput(match *ScanMatch, outputCommitment []byte, commit
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling note: %s", err)
 	}
-	if _, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(outputCommitment))); err != datastore.ErrNotFound {
-		return nil, errors.New("commitment already exists in database")
+	if !isRescan {
+		if _, err := w.ds.Get(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(outputCommitment))); err != datastore.ErrNotFound {
+			return nil, errors.New("commitment already exists in database")
+		}
 	}
 
 	if err := w.ds.Put(context.Background(), datastore.NewKey(NotesDatastoreKeyPrefix+hex.EncodeToString(outputCommitment)), ser); err != nil {
 		return nil, err
 	}
+
 	nullifier, err := types.CalculateNullifier(commitmentIndex, note.Salt, addrInfo.LockingScript.ScriptCommitment, addrInfo.LockingScript.LockingParams...)
 	if err != nil {
 		return nil, err

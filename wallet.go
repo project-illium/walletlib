@@ -305,6 +305,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 	if atomic.SwapUint32(&w.rescan, 1) != 0 {
 		return errors.New("rescan already running")
 	}
+	defer atomic.SwapUint32(&w.rescan, 0)
 
 	viewKeys, err := w.ViewKeys()
 	if err != nil {
@@ -365,7 +366,6 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 					w.mtx.Unlock()
 					return err
 				}
-				atomic.SwapUint32(&w.rescan, 0)
 				w.mtx.Unlock()
 				log.Debug("Wallet rescan complete")
 				return nil

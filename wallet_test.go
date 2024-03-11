@@ -587,3 +587,134 @@ func TestPublicAddresses(t *testing.T) {
 	_, err = w.Spend(exAddr, amt, 10)
 	assert.NoError(t, err)
 }
+
+func TestRescan(t *testing.T) {
+	// Three utxos in the wallet
+	// One of which is spent
+
+	ds := mock.NewMapDatastore()
+
+	broadcast := make(chan *transactions.Transaction)
+
+	var (
+		blk1, blk2, blk3, blk4 *blocks.Block
+	)
+
+	w, err := NewWallet([]Option{
+		Datastore(ds),
+		DataDir(repo.DefaultHomeDir),
+		BlockchainSource(&client.InternalClient{
+			BroadcastFunc: func(tx *transactions.Transaction) error {
+				go func() {
+					broadcast <- tx
+				}()
+				return nil
+			},
+			GetBlocksFunc: func(from, to uint32) ([]*blocks.Block, uint32, error) {
+				if blk1 == nil {
+					return nil, 0, nil
+				}
+				return []*blocks.Block{blk1, blk2, blk3, blk4}, 4, nil
+			},
+			GetAccumulatorCheckpointFunc: func(height uint32) (*blockchain.Accumulator, uint32, error) {
+				return nil, 0, blockchain.ErrNoCheckpoint
+			},
+		}),
+		Params(&params.RegestParams),
+		Prover(&zk.MockProver{}),
+	}...)
+	assert.NoError(t, err)
+	w.connectBlock(w.params.GenesisBlock, w.scanner, w.accdb, false)
+
+	addr, err := w.Address()
+	assert.NoError(t, err)
+
+	// Utxo 1
+	toAmount := types.Amount(1000000)
+	output, _, err := buildOutput(addr, toAmount, types.State{})
+	assert.NoError(t, err)
+
+	blk1 = &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 1},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk1)
+
+	notes, err := w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 1)
+
+	// Utxo 2
+	toAmount = types.Amount(2000000)
+	output, _, err = buildOutput(addr, toAmount, types.State{})
+	assert.NoError(t, err)
+
+	blk2 = &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 2},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk2)
+
+	notes, err = w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 2)
+
+	// Spend utxo 1
+	var nullifier types.Nullifier
+	for n, c := range w.nullifiers {
+		if c.Compare(types.NewID(notes[0].Commitment)) == 0 {
+			nullifier = n
+			assert.NoError(t, err)
+		}
+	}
+	blk3 = &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 3},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Nullifiers: [][]byte{
+					nullifier.Bytes(),
+				},
+			}),
+		},
+	}
+	w.ConnectBlock(blk3)
+
+	notes, err = w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 1)
+
+	// Utxo 3
+	toAmount = types.Amount(3000000)
+	output, _, err = buildOutput(addr, toAmount, types.State{})
+	assert.NoError(t, err)
+
+	blk4 = &blocks.Block{
+		Header: &blocks.BlockHeader{Height: 4},
+		Transactions: []*transactions.Transaction{
+			transactions.WrapTransaction(&transactions.StandardTransaction{
+				Outputs: []*transactions.Output{output},
+			}),
+		},
+	}
+	w.ConnectBlock(blk4)
+
+	notes, err = w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 2)
+
+	err = w.rescanWallet(0)
+	assert.NoError(t, err)
+
+	notes, err = w.Notes()
+	assert.NoError(t, err)
+	assert.Len(t, notes, 2)
+	assert.Len(t, w.nullifiers, 2)
+}
