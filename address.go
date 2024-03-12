@@ -142,6 +142,18 @@ func NewPublicAddress(lockingParams string, params *params.NetworkParams) (*Publ
 	}, nil
 }
 
+// NewPublicAddressFromCommitment builds a public address from the hash of the locking params
+func NewPublicAddressFromCommitment(commitment []byte, params *params.NetworkParams) (*PublicAddress, error) {
+	var h2 [32]byte
+	copy(h2[:], commitment[:])
+
+	return &PublicAddress{
+		hash:    h2,
+		version: 2,
+		params:  params,
+	}, nil
+}
+
 // ScriptHash returns the hash of the locking-params used by the
 // addresses. This constitutes multisig params, ex) <threshold><pub1><pub2>, etc.
 func (a *PublicAddress) ScriptHash() [32]byte {
