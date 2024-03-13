@@ -507,12 +507,14 @@ func (w *Wallet) Notes() ([]*pb.SpendNote, error) {
 	return notes, nil
 }
 
-func (w *Wallet) Transactions() ([]*WalletTransaction, error) {
+func (w *Wallet) Transactions(skip, limit int) ([]*WalletTransaction, error) {
 	w.mtx.RLock()
 	defer w.mtx.RUnlock()
 
 	results, err := w.ds.Query(context.Background(), query.Query{
 		Prefix: TransactionDatastoreKeyPrefix,
+		Limit:  limit,
+		Offset: skip,
 	})
 	if err != nil {
 		return nil, err
