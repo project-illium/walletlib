@@ -267,6 +267,10 @@ func (w *Wallet) Start() {
 					continue
 				}
 				w.mtx.Lock()
+				if blk.Header.Height <= w.chainHeight {
+					w.mtx.Unlock()
+					continue loop
+				}
 				if blk.Header.Height > w.chainHeight+1 && w.chainClient.IsFullClient() {
 					for {
 						from := w.chainHeight + 1
