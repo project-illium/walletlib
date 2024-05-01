@@ -914,7 +914,7 @@ func (w *Wallet) buildAndProveStakeTransaction(commitment types.ID) (*transactio
 	return transactions.WrapTransaction(tx), deleteFunc, nil
 }
 
-func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Address, networkKey crypto.PrivKey, epoch types.ID) (*transactions.Transaction, error) {
+func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Address, networkKey crypto.PrivKey, epochID types.ID, epochHeight uint32) (*transactions.Transaction, error) {
 	w.mtx.RLock()
 
 	tx, privateParams, publicParams, err := func() (*transactions.CoinbaseTransaction, zk.Parameters, zk.Parameters, error) {
@@ -946,7 +946,8 @@ func (w *Wallet) BuildCoinbaseTransaction(unclaimedCoins types.Amount, addr Addr
 		tx := &transactions.CoinbaseTransaction{
 			Validator_ID: peerIDBytes,
 			NewCoins:     uint64(unclaimedCoins),
-			Epoch:        epoch.Bytes(),
+			Epoch_ID:     epochID.Bytes(),
+			EpochHeight:  epochHeight,
 			Outputs:      []*transactions.Output{output},
 			Signature:    nil,
 			Proof:        nil,

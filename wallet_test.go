@@ -380,7 +380,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 	// 2 utoxs in wallet (1 staked, 1 change)
 	w.ConnectBlock(blk3)
 
-	cbtx, err := w.BuildCoinbaseTransaction(types.Amount(2000000), nil, priv, types.ID{})
+	cbtx, err := w.BuildCoinbaseTransaction(types.Amount(2000000), nil, priv, types.ID{}, 0)
 	assert.NoError(t, err)
 
 	blk4 := &blocks.Block{
