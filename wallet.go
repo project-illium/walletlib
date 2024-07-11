@@ -10,14 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ipfs/go-datastore"
+	ids "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
-	badger "github.com/ipfs/go-ds-badger"
 	lcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/project-illium/ilxd/blockchain"
 	"github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/params"
 	"github.com/project-illium/ilxd/repo"
+	"github.com/project-illium/ilxd/repo/datastore"
 	"github.com/project-illium/ilxd/repo/mock"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/types/blocks"
@@ -41,7 +41,7 @@ const (
 )
 
 type Wallet struct {
-	ds             repo.Datastore
+	ds             datastore.Datastore
 	prover         zk.Prover
 	params         *params.NetworkParams
 	keychain       *Keychain
@@ -80,7 +80,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 	ds := cfg.datastore
 	var err error
 	if cfg.datastore == nil {
-		ds, err = badger.NewDatastore(cfg.dataDir, &badger.DefaultOptions)
+		ds, err = datastore.NewIlxdDatastore(cfg.dataDir, cfg.params)
 		if err != nil {
 			return nil, err
 		}
@@ -134,10 +134,10 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 		height    uint32
 		newWallet bool
 	)
-	_, err = ds.Get(context.Background(), datastore.NewKey(WalletHeightDatastoreKey))
-	if err != nil && !errors.Is(err, datastore.ErrNotFound) {
+	_, err = ds.Get(context.Background(), ids.NewKey(WalletHeightDatastoreKey))
+	if err != nil && !errors.Is(err, ids.ErrNotFound) {
 		return nil, err
-	} else if errors.Is(err, datastore.ErrNotFound) {
+	} else if errors.Is(err, ids.ErrNotFound) {
 		newWallet = true
 	}
 
@@ -325,7 +325,7 @@ func (w *Wallet) rescanWallet(fromHeight uint32) error {
 		scanner.AddScriptHash(types.NewID(publicAddrLockingParams[:]), vieKey)
 	}
 
-	accdb := blockchain.NewAccumulatorDB(mock.NewMapDatastore())
+	accdb := blockchain.NewAccumulatorDB(mock.NewMockDatastore())
 
 	var (
 		height     uint32 = 0
@@ -398,7 +398,7 @@ func (w *Wallet) MnemonicSeed() (string, error) {
 		return "", ErrEncryptedKeychain
 	}
 
-	mnemonic, err := w.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	mnemonic, err := w.ds.Get(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey))
 	if err != nil {
 		return "", err
 	}
@@ -457,7 +457,7 @@ func (w *Wallet) Addresses() ([]Address, error) {
 }
 
 func (w *Wallet) AddressInfo(addr Address) (*pb.AddrInfo, error) {
-	ser, err := w.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()))
+	ser, err := w.ds.Get(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+addr.String()))
 	if err != nil {
 		return nil, err
 	}
@@ -765,7 +765,7 @@ func (w *Wallet) Close() {
 
 	heightBytes := make([]byte, 32)
 	binary.BigEndian.PutUint32(heightBytes, w.chainHeight)
-	if err := w.ds.Put(context.Background(), datastore.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
+	if err := w.ds.Put(context.Background(), ids.NewKey(WalletHeightDatastoreKey), heightBytes); err != nil {
 		log.WithCaller(true).Error("Wallet close error", log.Args("error", err))
 	}
 
