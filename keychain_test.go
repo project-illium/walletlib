@@ -14,7 +14,7 @@ import (
 )
 
 func TestKeychain(t *testing.T) {
-	ds := mock.NewMapDatastore()
+	ds := mock.NewMockDatastore()
 
 	_, err := LoadKeychain(ds, &params.RegestParams)
 	assert.Error(t, err)

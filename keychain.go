@@ -16,12 +16,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/ipfs/go-datastore"
+	ids "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	icrypto "github.com/project-illium/ilxd/crypto"
 	"github.com/project-illium/ilxd/params"
-	"github.com/project-illium/ilxd/repo"
+	"github.com/project-illium/ilxd/repo/datastore"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/zk"
 	"github.com/project-illium/walletlib/pb"
@@ -51,7 +51,7 @@ const (
 )
 
 type Keychain struct {
-	ds              repo.Datastore
+	ds              datastore.Datastore
 	params          *params.NetworkParams
 	unencryptedSeed []byte
 
@@ -60,18 +60,18 @@ type Keychain struct {
 	mtx         sync.RWMutex
 }
 
-func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic string) (*Keychain, error) {
-	if err := ds.Put(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey), []byte(mnemonic)); err != nil {
+func NewKeychain(ds datastore.Datastore, params *params.NetworkParams, mnemonic string) (*Keychain, error) {
+	if err := ds.Put(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey), []byte(mnemonic)); err != nil {
 		return nil, err
 	}
 
 	salt := make([]byte, 32)
 	rand.Read(salt)
-	if err := ds.Put(context.Background(), datastore.NewKey(KeyDatastoreSaltKey), salt); err != nil {
+	if err := ds.Put(context.Background(), ids.NewKey(KeyDatastoreSaltKey), salt); err != nil {
 		return nil, err
 	}
 
-	if err := ds.Put(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey), []byte{0x00}); err != nil {
+	if err := ds.Put(context.Background(), ids.NewKey(WalletEncryptedDatastoreKey), []byte{0x00}); err != nil {
 		return nil, err
 	}
 
@@ -108,13 +108,13 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 		return nil, err
 	}
 
-	if err := ds.Put(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser); err != nil {
+	if err := ds.Put(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser); err != nil {
 		return nil, err
 	}
-	if err := ds.Put(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey), []byte(addr.String())); err != nil {
+	if err := ds.Put(context.Background(), ids.NewKey(CurrentAddressIndexDatastoreKey), []byte(addr.String())); err != nil {
 		return nil, err
 	}
-	if err := ds.Put(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
+	if err := ds.Put(context.Background(), ids.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
 		return nil, err
 	}
 
@@ -127,20 +127,20 @@ func NewKeychain(ds repo.Datastore, params *params.NetworkParams, mnemonic strin
 	}, nil
 }
 
-func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, error) {
-	_, err := ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+func LoadKeychain(ds datastore.Datastore, params *params.NetworkParams) (*Keychain, error) {
+	_, err := ds.Get(context.Background(), ids.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
 		return nil, ErrUninitializedKeychain
 	}
 
-	encrypted, err := ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	encrypted, err := ds.Get(context.Background(), ids.NewKey(WalletEncryptedDatastoreKey))
 	if err != nil {
 		return nil, err
 	}
 
 	pruned := false
-	_, err = ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
-	if errors.Is(err, datastore.ErrNotFound) {
+	_, err = ds.Get(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey))
+	if errors.Is(err, ids.ErrNotFound) {
 		pruned = true
 	} else if err != nil {
 		return nil, err
@@ -155,7 +155,7 @@ func LoadKeychain(ds repo.Datastore, params *params.NetworkParams) (*Keychain, e
 	}
 
 	if encrypted[0] == 0x00 && !pruned {
-		mnemonic, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+		mnemonic, err := kc.ds.Get(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey))
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +195,7 @@ func (kc *Keychain) Address() (Address, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
-	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+	addrStr, err := kc.ds.Get(context.Background(), ids.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
 		return nil, err
 	}
@@ -207,12 +207,12 @@ func (kc *Keychain) TimelockedAddress(lockUntil time.Time) (Address, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
-	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+	addrStr, err := kc.ds.Get(context.Background(), ids.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
 		return nil, err
 	}
 
-	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
+	ser, err := kc.ds.Get(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
 	if err != nil {
 		return nil, err
 	}
@@ -252,12 +252,12 @@ func (kc *Keychain) publicAddress() (Address, *icrypto.Curve25519PrivateKey, err
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
-	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+	addrStr, err := kc.ds.Get(context.Background(), ids.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
 		return nil, nil, err
 	}
 
-	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
+	ser, err := kc.ds.Get(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -293,11 +293,11 @@ func (kc *Keychain) NewAddress() (Address, error) {
 		return nil, ErrPublicOnlyKeychain
 	}
 
-	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey))
+	addrStr, err := kc.ds.Get(context.Background(), ids.NewKey(CurrentAddressIndexDatastoreKey))
 	if err != nil {
 		return nil, err
 	}
-	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
+	ser, err := kc.ds.Get(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
 	if err != nil {
 		return nil, err
 	}
@@ -339,13 +339,13 @@ func (kc *Keychain) NewAddress() (Address, error) {
 		return nil, err
 	}
 
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser); err != nil {
 		return nil, err
 	}
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(CurrentAddressIndexDatastoreKey), []byte(addr.String())); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(CurrentAddressIndexDatastoreKey), []byte(addr.String())); err != nil {
 		return nil, err
 	}
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
 		return nil, err
 	}
 
@@ -416,7 +416,7 @@ func (kc *Keychain) PrivateKeys() (map[WalletPrivateKey]Address, error) {
 }
 
 func (kc *Keychain) ViewKey(addr Address) (crypto.PrivKey, error) {
-	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()))
+	ser, err := kc.ds.Get(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+addr.String()))
 	if err != nil {
 		return nil, err
 	}
@@ -443,8 +443,8 @@ func (kc *Keychain) ImportAddress(addr Address, lockingScript types.LockingScrip
 		return err
 	}
 
-	_, err = kc.ds.Get(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)))
-	if !errors.Is(err, datastore.ErrNotFound) {
+	_, err = kc.ds.Get(context.Background(), ids.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)))
+	if !errors.Is(err, ids.ErrNotFound) {
 		return errors.New("view key already exists in wallet")
 	}
 
@@ -469,11 +469,11 @@ func (kc *Keychain) ImportAddress(addr Address, lockingScript types.LockingScrip
 		return err
 	}
 
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)), []byte(addr.String())); err != nil {
 		return err
 	}
 
-	return kc.ds.Put(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser)
+	return kc.ds.Put(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+addr.String()), ser)
 }
 
 func (kc *Keychain) NetworkKey() (crypto.PrivKey, error) {
@@ -517,7 +517,7 @@ func (kc *Keychain) AddrInfo(addr Address) (*pb.AddrInfo, error) {
 	kc.mtx.RLock()
 	defer kc.mtx.RUnlock()
 
-	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+addr.String()))
+	ser, err := kc.ds.Get(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+addr.String()))
 	if err != nil {
 		return nil, err
 	}
@@ -533,11 +533,11 @@ func (kc *Keychain) addrInfo(viewKey crypto.PrivKey) (*pb.AddrInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	addrStr, err := kc.ds.Get(context.Background(), datastore.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)))
+	addrStr, err := kc.ds.Get(context.Background(), ids.NewKey(ViewKeyIndexDatastoreKey+hex.EncodeToString(serializedKey)))
 	if err != nil {
 		return nil, err
 	}
-	ser, err := kc.ds.Get(context.Background(), datastore.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
+	ser, err := kc.ds.Get(context.Background(), ids.NewKey(AddressDatastoreKeyPrefix+string(addrStr)))
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +586,7 @@ func (kc *Keychain) SetPassphrase(passphrase string) error {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
 
-	encrypted, err := kc.ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	encrypted, err := kc.ds.Get(context.Background(), ids.NewKey(WalletEncryptedDatastoreKey))
 	if err != nil {
 		return err
 	}
@@ -594,12 +594,12 @@ func (kc *Keychain) SetPassphrase(passphrase string) error {
 		return errors.New("wallet already encrypted")
 	}
 
-	salt, err := kc.ds.Get(context.Background(), datastore.NewKey(KeyDatastoreSaltKey))
+	salt, err := kc.ds.Get(context.Background(), ids.NewKey(KeyDatastoreSaltKey))
 	if err != nil {
 		return err
 	}
 
-	mnemonic, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	mnemonic, err := kc.ds.Get(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey))
 	if err != nil {
 		return err
 	}
@@ -622,16 +622,16 @@ func (kc *Keychain) SetPassphrase(passphrase string) error {
 	stream := cipher.NewCFBEncrypter(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], mnemonic)
 
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey), mnemonic); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey), mnemonic); err != nil {
 		return err
 	}
 
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey), []byte{0x01}); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(WalletEncryptedDatastoreKey), []byte{0x01}); err != nil {
 		return err
 	}
 
 	h := sha256.Sum256(dk)
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey), h[:]); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(PassphraseHashDatastoreKey), h[:]); err != nil {
 		return err
 	}
 
@@ -640,7 +640,7 @@ func (kc *Keychain) SetPassphrase(passphrase string) error {
 }
 
 func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) error {
-	encrypted, err := kc.ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	encrypted, err := kc.ds.Get(context.Background(), ids.NewKey(WalletEncryptedDatastoreKey))
 	if err != nil {
 		return err
 	}
@@ -648,19 +648,19 @@ func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) er
 		return errors.New("wallet not encrypted")
 	}
 
-	ciphertext, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	ciphertext, err := kc.ds.Get(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey))
 	if err != nil {
 		return err
 	}
 
-	salt, err := kc.ds.Get(context.Background(), datastore.NewKey(KeyDatastoreSaltKey))
+	salt, err := kc.ds.Get(context.Background(), ids.NewKey(KeyDatastoreSaltKey))
 	if err != nil {
 		return err
 	}
 
 	dk := pbkdf2.Key([]byte(currentPassphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
 
-	h, err := kc.ds.Get(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey))
+	h, err := kc.ds.Get(context.Background(), ids.NewKey(PassphraseHashDatastoreKey))
 	if err != nil {
 		return err
 	}
@@ -706,11 +706,11 @@ func (kc *Keychain) ChangePassphrase(currentPassphrase, newPassphrase string) er
 	stream.XORKeyStream(ciphertext2[aes.BlockSize:], ciphertext)
 
 	pkh2 := sha256.Sum256(dk2)
-	if err := kc.ds.Put(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey), pkh2[:]); err != nil {
+	if err := kc.ds.Put(context.Background(), ids.NewKey(PassphraseHashDatastoreKey), pkh2[:]); err != nil {
 		return err
 	}
 
-	return kc.ds.Put(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey), []byte(ciphertext))
+	return kc.ds.Put(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey), []byte(ciphertext))
 }
 
 func (kc *Keychain) Unlock(passphrase string, duration time.Duration) error {
@@ -721,18 +721,18 @@ func (kc *Keychain) Unlock(passphrase string, duration time.Duration) error {
 		return errors.New("keychain already unlocked")
 	}
 
-	ciphertext, err := kc.ds.Get(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey))
+	ciphertext, err := kc.ds.Get(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey))
 	if err != nil {
 		return err
 	}
 
-	salt, err := kc.ds.Get(context.Background(), datastore.NewKey(KeyDatastoreSaltKey))
+	salt, err := kc.ds.Get(context.Background(), ids.NewKey(KeyDatastoreSaltKey))
 	if err != nil {
 		return err
 	}
 
 	dk := pbkdf2.Key([]byte(passphrase), salt, defaultKdfRounds, defaultKeyLength, sha512.New)
-	h, err := kc.ds.Get(context.Background(), datastore.NewKey(PassphraseHashDatastoreKey))
+	h, err := kc.ds.Get(context.Background(), ids.NewKey(PassphraseHashDatastoreKey))
 	if err != nil {
 		return err
 	}
@@ -776,7 +776,7 @@ func (kc *Keychain) Lock() error {
 	kc.mtx.Lock()
 	defer kc.mtx.Unlock()
 
-	encrypted, err := kc.ds.Get(context.Background(), datastore.NewKey(WalletEncryptedDatastoreKey))
+	encrypted, err := kc.ds.Get(context.Background(), ids.NewKey(WalletEncryptedDatastoreKey))
 	if err != nil {
 		return err
 	}
@@ -800,7 +800,7 @@ func (kc *Keychain) Prune() error {
 	if kc.isEncrypted {
 		return ErrEncryptedKeychain
 	}
-	if err := kc.ds.Delete(context.Background(), datastore.NewKey(MnemonicSeedDatastoreKey)); err != nil {
+	if err := kc.ds.Delete(context.Background(), ids.NewKey(MnemonicSeedDatastoreKey)); err != nil {
 		return err
 	}
 

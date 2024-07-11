@@ -7,7 +7,7 @@ package walletlib
 import (
 	"errors"
 	"github.com/project-illium/ilxd/params"
-	"github.com/project-illium/ilxd/repo"
+	"github.com/project-illium/ilxd/repo/datastore"
 	"github.com/project-illium/ilxd/types"
 	"github.com/project-illium/ilxd/zk"
 	"github.com/project-illium/logger"
@@ -50,7 +50,7 @@ func DataDir(dataDir string) Option {
 }
 
 // Datastore is an implementation of the repo.Datastore interface
-func Datastore(ds repo.Datastore) Option {
+func Datastore(ds datastore.Datastore) Option {
 	return func(cfg *config) error {
 		cfg.datastore = ds
 		return nil
@@ -107,7 +107,7 @@ func Logger(logger *logger.Logger) Option {
 }
 
 type config struct {
-	datastore   repo.Datastore
+	datastore   datastore.Datastore
 	prover      zk.Prover
 	params      *params.NetworkParams
 	feePerKB    types.Amount

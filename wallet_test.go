@@ -67,7 +67,7 @@ func mockPublicAddress() (Address, error) {
 }
 
 func TestWallet(t *testing.T) {
-	ds := mock.NewMapDatastore()
+	ds := mock.NewMockDatastore()
 
 	w, err := NewWallet([]Option{
 		Datastore(ds),
@@ -209,7 +209,7 @@ func TestWallet(t *testing.T) {
 }
 
 func TestTransactions(t *testing.T) {
-	ds := mock.NewMapDatastore()
+	ds := mock.NewMockDatastore()
 
 	w, err := NewWallet([]Option{
 		Datastore(ds),
@@ -283,7 +283,7 @@ func TestTransactions(t *testing.T) {
 }
 
 func TestCoinbaseAndSpends(t *testing.T) {
-	ds := mock.NewMapDatastore()
+	ds := mock.NewMockDatastore()
 	priv, _, err := lcrypto.GenerateEd25519Key(rand.Reader)
 	assert.NoError(t, err)
 
@@ -490,7 +490,7 @@ func TestCoinbaseAndSpends(t *testing.T) {
 }
 
 func TestPublicAddresses(t *testing.T) {
-	ds := mock.NewMapDatastore()
+	ds := mock.NewMockDatastore()
 
 	broadcast := make(chan *transactions.Transaction)
 
@@ -592,7 +592,7 @@ func TestRescan(t *testing.T) {
 	// Three utxos in the wallet
 	// One of which is spent
 
-	ds := mock.NewMapDatastore()
+	ds := mock.NewMockDatastore()
 
 	broadcast := make(chan *transactions.Transaction)
 
