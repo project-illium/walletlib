@@ -80,7 +80,7 @@ func NewWallet(opts ...Option) (*Wallet, error) {
 	ds := cfg.datastore
 	var err error
 	if cfg.datastore == nil {
-		ds, err = datastore.NewIlxdDatastore(cfg.dataDir, cfg.params)
+		ds, err = datastore.NewIlxdDatastore(cfg.dataDir, datastore.WithParams(cfg.params), datastore.WithNoBlockstore())
 		if err != nil {
 			return nil, err
 		}
